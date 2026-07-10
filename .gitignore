@@ -1,0 +1,23 @@
+# ── Environment & credentials ──────────────────────────────────────
+.env
+includes/db_prod.php
+
+# ── Local Claude Code settings (machine-specific) ──────────────────
+.claude/settings.local.json
+
+# ── Uploaded / user-generated content ──────────────────────────────
+# The app creates these directories itself at runtime (mkdir on first
+# upload); only the placeholder is tracked so the folder ships empty.
+uploads/passports/*
+!uploads/passports/.gitkeep
+uploads/settings/*
+!uploads/settings/.gitkeep
+
+# ── Runtime artifacts ───────────────────────────────────────────────
+cron/*.lock
+*.log
+
+# ── OS / editor cruft ───────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+*.swp

@@ -1,0 +1,507 @@
+/* ================================================================
+   KIMTECH Online Admission Portal — Main CSS
+   ================================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+/* ── CSS Variables ─────────────────────────────────────────────── */
+:root {
+  --primary:       #006fa0;
+  --primary-dark:  #004f73;
+  --primary-light: #0097d6;
+  --danger:        #e63946;
+  --success:       #2dc653;
+  --warning:       #f4a261;
+  --dark-bg:       rgb(33, 25, 21);
+  --card-bg:       rgba(33, 25, 21, 0.95);
+  --text-light:    #ffffff;
+  --text-muted:    #cccccc;
+  --border-radius: 10px;
+  --shadow:        0 4px 30px rgba(0, 111, 160, 0.35);
+  --glow-text:     1px 1px 2px black, 0 0 25px #006fa0, 0 0 8px #004f73;
+}
+
+/* ── Base Reset ─────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; }
+body {
+  font-family: 'Inter', sans-serif;
+  background: url('../img/bg.jpg') center/cover no-repeat fixed;
+  min-height: 100vh;
+  color: var(--text-light);
+}
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.45);
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ── Utility Classes ────────────────────────────────────────────── */
+.hidden { display: none !important; }
+.glow-text { text-shadow: var(--glow-text); }
+.text-danger { color: var(--danger) !important; }
+.text-success { color: var(--success) !important; }
+.text-white { color: #fff !important; }
+.text-center { text-align: center; }
+.w-100 { width: 100%; }
+.mt-1 { margin-top: 0.5rem; }
+.mt-2 { margin-top: 1rem; }
+.mt-3 { margin-top: 1.5rem; }
+.mb-1 { margin-bottom: 0.5rem; }
+.mb-2 { margin-bottom: 1rem; }
+
+/* ── Navbar ─────────────────────────────────────────────────────── */
+.uk-navbar-container {
+  background: rgba(10, 20, 30, 0.88) !important;
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid rgba(0, 111, 160, 0.3);
+}
+.uk-navbar-container .uk-logo,
+.uk-navbar-nav > li > a {
+  color: #fff !important;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+.nav-logo-wrap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 10px;
+  padding: 6px;
+  border-radius: 50%;
+  background: rgba(3, 8, 16, 0.85);
+  border: 2px solid rgba(0, 180, 255, 0.35);
+  box-shadow: 0 0 20px rgba(0, 180, 255, 0.25);
+  overflow: visible;
+}
+.nav-logo {
+  width: 52px;
+  height: 52px;
+  object-fit: contain;
+  border-radius: 0;
+  display: block;
+}
+.uk-navbar-nav > li > a:hover,
+.uk-navbar-nav > li.uk-active > a {
+  color: var(--primary-light) !important;
+}
+
+/* ── Portal Card ────────────────────────────────────────────────── */
+.portal-card {
+  background: var(--card-bg);
+  border: 1px solid rgba(0, 111, 160, 0.25);
+  border-radius: var(--border-radius);
+  box-shadow: var(--shadow);
+  padding: 2rem;
+  position: relative;
+  z-index: 1;
+  backdrop-filter: blur(6px);
+}
+
+/* ── Welcome Banner ─────────────────────────────────────────────── */
+.welcome-banner {
+  background: rgba(10, 20, 30, 0.82);
+  border-radius: var(--border-radius);
+  padding: 1rem 1.5rem;
+  display: inline-block;
+  text-shadow: var(--glow-text);
+  font-size: clamp(1rem, 2.5vw, 1.4rem);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-weight: 700;
+  border: 1px solid rgba(0, 111, 160, 0.4);
+}
+
+/* ── Nav Cards (Home page) ──────────────────────────────────────── */
+.uk-card-box {
+  background: rgba(15, 25, 35, 0.88) !important;
+  border: 1px solid rgba(0, 111, 160, 0.3);
+  border-radius: var(--border-radius) !important;
+  color: #fff !important;
+  transition: transform 0.25s ease, box-shadow 0.25s ease, background 0.25s ease;
+  text-decoration: none !important;
+}
+.uk-card-box:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 8px 32px rgba(0, 111, 160, 0.5);
+  background: rgba(0, 111, 160, 0.3) !important;
+  text-decoration: none !important;
+}
+.uk-card-box p { text-shadow: var(--glow-text); text-transform: uppercase; font-weight: 700; font-size: 1.1rem; }
+
+/* ── Agree Section (modal) ──────────────────────────────────────── */
+.agree-section {
+  border: 2px solid var(--danger);
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
+  background-color: rgba(230, 57, 70, 0.1);
+  box-shadow: 0 0 12px rgba(230,57,70,0.5);
+  margin-top: 1.25rem;
+}
+.agree-section label {
+  color: var(--danger);
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* ── Buttons ─────────────────────────────────────────────────────── */
+.tm-button, .btn-portal {
+  display: inline-block;
+  width: 70%;
+  height: 50px;
+  font-weight: 700;
+  color: #fff !important;
+  background-color: var(--primary);
+  border: none;
+  border-radius: 30px;
+  cursor: pointer;
+  letter-spacing: 0.5px;
+  font-size: 1rem;
+  transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+  box-shadow: 0 4px 15px rgba(0,111,160,0.35);
+}
+.tm-button:hover, .btn-portal:hover {
+  background-color: slateblue !important;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(106,90,205,0.5);
+}
+@supports (backdrop-filter: blur(10px)) {
+  .tm-button:hover, .btn-portal:hover {
+    backdrop-filter: blur(10px);
+  }
+}
+
+/* ── Form Labels ─────────────────────────────────────────────────── */
+.uk-form-label { color: var(--text-muted) !important; font-weight: 500; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* ── Inputs ──────────────────────────────────────────────────────── */
+.uk-input, .uk-select, .uk-textarea, .form-control {
+  background: rgba(255,255,255,0.07) !important;
+  border: 1px solid rgba(0, 111, 160, 0.35) !important;
+  color: #fff !important;
+  border-radius: 8px !important;
+  height: 48px !important;
+  font-size: 1rem;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.uk-input:focus, .uk-select:focus, .form-control:focus {
+  border-color: var(--primary-light) !important;
+  box-shadow: 0 0 0 3px rgba(0, 151, 214, 0.2) !important;
+  outline: none;
+  background: rgba(255,255,255,0.1) !important;
+}
+.uk-input::placeholder, .form-control::placeholder { color: rgba(255,255,255,0.4) !important; }
+
+/* Select dropdowns — closed state + option list (Windows/native menus) */
+select.uk-input,
+select.uk-select,
+select.portal-select,
+.uk-select {
+  color: #fff !important;
+  background-color: rgba(255, 255, 255, 0.07) !important;
+  color-scheme: dark;
+  cursor: pointer;
+}
+select.uk-input option,
+select.uk-select option,
+select.portal-select option,
+.uk-select option {
+  background-color: #1a2a3a !important;
+  color: #fff !important;
+}
+select.uk-input option:checked,
+select.uk-select option:checked,
+select.portal-select option:checked,
+.uk-select option:checked {
+  background-color: #006fa0 !important;
+  color: #fff !important;
+}
+select.uk-input option:hover,
+select.uk-select option:hover,
+select.portal-select option:hover,
+.uk-select option:hover {
+  background-color: #004f73 !important;
+  color: #fff !important;
+}
+
+/* Navbar / header logo ring */
+.logo-ring {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  border-radius: 50%;
+  background: rgba(3, 8, 16, 0.85);
+  border: 2px solid rgba(0, 180, 255, 0.45);
+  box-shadow: 0 0 20px rgba(0, 180, 255, 0.25);
+  overflow: visible;
+  flex-shrink: 0;
+}
+.logo-ring img {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  border-radius: 0;
+}
+
+/* ── Notices ─────────────────────────────────────────────────────── */
+.notice-section {
+  background: rgba(10, 20, 30, 0.7);
+  border-left: 4px solid var(--danger);
+  padding: 1rem 1.25rem;
+  border-radius: 0 var(--border-radius) var(--border-radius) 0;
+  margin-bottom: 1.25rem;
+}
+.notice-section h2 { color: var(--danger); font-size: 1rem; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 0.5rem; }
+.notice-section ul, .notice-section ol { color: #ddd; padding-left: 1.25rem; }
+.notice-section ul li, .notice-section ol li { margin-bottom: 0.3rem; line-height: 1.5; }
+.notice-section strong { color: var(--danger); }
+
+/* ── Error Alerts ────────────────────────────────────────────────── */
+.alert-error {
+  background: rgba(230, 57, 70, 0.15);
+  border: 1px solid var(--danger);
+  color: #ff6b78;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.alert-success {
+  background: rgba(45, 198, 83, 0.15);
+  border: 1px solid var(--success);
+  color: var(--success);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+}
+
+/* ── Autocomplete Suggestions ───────────────────────────────────── */
+.autocomplete-suggestions {
+  background: #1a2a3a;
+  border: 1px solid rgba(0,111,160,0.4);
+  border-radius: 0 0 8px 8px;
+  max-height: 220px;
+  overflow-y: auto;
+  position: relative;
+  z-index: 9999;
+}
+.autocomplete-suggestion {
+  padding: 0.6rem 1rem;
+  cursor: pointer;
+  color: #e0e0e0;
+  font-size: 0.88rem;
+  border-bottom: 1px solid rgba(255,255,255,0.05);
+  transition: background 0.15s;
+}
+.autocomplete-suggestion:hover { background: rgba(0,111,160,0.3); color: #fff; }
+.autocomplete-suggestion .masked-index { color: var(--warning); font-size: 0.78rem; }
+.autocomplete-suggestion .badge-pill {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: var(--primary);
+  color: #fff;
+  margin-left: 4px;
+}
+
+/* ── Multi-Step Progress Bar ─────────────────────────────────────── */
+.steps-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 2rem;
+  gap: 0;
+}
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  flex: 1;
+}
+.step-item:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  top: 20px;
+  left: 50%;
+  width: 100%;
+  height: 3px;
+  background: rgba(255,255,255,0.2);
+  z-index: 0;
+}
+.step-item.completed::after, .step-item.active::after { background: var(--primary); }
+.step-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.9rem;
+  position: relative;
+  z-index: 1;
+  transition: all 0.3s;
+  color: #fff;
+}
+.step-item.active .step-circle {
+  background: var(--primary);
+  border-color: var(--primary-light);
+  box-shadow: 0 0 12px rgba(0,151,214,0.6);
+}
+.step-item.completed .step-circle {
+  background: var(--success);
+  border-color: var(--success);
+}
+.step-label {
+  margin-top: 0.5rem;
+  font-size: 0.68rem;
+  color: rgba(255,255,255,0.5);
+  text-align: center;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+}
+.step-item.active .step-label { color: var(--primary-light); font-weight: 600; }
+.step-item.completed .step-label { color: var(--success); }
+
+/* ── Form Steps ──────────────────────────────────────────────────── */
+.form-step { display: none; animation: fadeSlide 0.3s ease; }
+.form-step.active { display: block; }
+@keyframes fadeSlide {
+  from { opacity: 0; transform: translateX(20px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+.step-nav-btns { display: flex; gap: 1rem; margin-top: 1.5rem; }
+.btn-step {
+  flex: 1;
+  height: 46px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.btn-next { background: var(--primary); color: #fff; }
+.btn-next:hover { background: var(--primary-dark); transform: translateY(-2px); }
+.btn-back { background: rgba(255,255,255,0.1); color: #fff; border: 1px solid rgba(255,255,255,0.2); }
+.btn-back:hover { background: rgba(255,255,255,0.2); }
+.btn-submit { background: var(--success); color: #fff; }
+.btn-submit:hover { background: #23a845; }
+
+/* ── Review Table ────────────────────────────────────────────────── */
+.review-table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; }
+.review-table td { padding: 0.5rem 0.75rem; border-bottom: 1px solid rgba(255,255,255,0.07); font-size: 0.9rem; }
+.review-table td:first-child { color: var(--text-muted); font-weight: 500; width: 40%; }
+.review-table td:last-child { color: #fff; font-weight: 600; }
+
+/* ── Dashboard Download Cards ───────────────────────────────────── */
+.download-card {
+  background: rgba(15,25,35,0.88);
+  border: 1px solid rgba(0,111,160,0.3);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  text-align: center;
+  transition: transform 0.25s, box-shadow 0.25s;
+  text-decoration: none !important;
+  display: block;
+  color: #fff !important;
+}
+.download-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 12px 32px rgba(0,111,160,0.45);
+  background: rgba(0,111,160,0.2);
+}
+.download-card .icon { font-size: 2.5rem; margin-bottom: 0.75rem; display: block; }
+.download-card .title { font-size: 1rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: #fff; }
+.download-card .subtitle { font-size: 0.78rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+/* ── Student Info Box ────────────────────────────────────────────── */
+.student-info-box {
+  background: rgba(15,25,35,0.88);
+  border: 1px solid rgba(0,111,160,0.3);
+  border-radius: var(--border-radius);
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+.student-photo {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary);
+  flex-shrink: 0;
+}
+.student-details h3 { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.25rem; }
+.student-details p { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.1rem; }
+
+/* ── Helpline ────────────────────────────────────────────────────── */
+.helpline { font-weight: 700; color: var(--danger); font-size: 0.9rem; margin-top: 0.75rem; }
+
+/* ── Photo Upload Preview ────────────────────────────────────────── */
+.photo-preview {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 3px solid var(--primary);
+  display: block;
+  margin: 1rem auto;
+}
+.upload-box {
+  border: 2px dashed rgba(0,111,160,0.5);
+  border-radius: 10px;
+  padding: 2rem;
+  text-align: center;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  background: rgba(0,111,160,0.05);
+}
+.upload-box:hover { border-color: var(--primary-light); background: rgba(0,111,160,0.1); }
+.upload-box input[type="file"] { display: none; }
+.upload-label { cursor: pointer; display: block; }
+.upload-icon { font-size: 2rem; margin-bottom: 0.5rem; display: block; }
+
+/* ── Footer ──────────────────────────────────────────────────────── */
+footer {
+  background: rgba(10,15,20,0.92) !important;
+  border-top: 1px solid rgba(0,111,160,0.2);
+  padding: 1.5rem;
+  text-align: center;
+  color: rgba(255,255,255,0.5);
+  font-size: 0.8rem;
+  position: relative;
+  z-index: 1;
+}
+footer a { color: var(--primary-light) !important; text-decoration: none; }
+footer a:hover { color: #fff !important; }
+
+/* ── UIKit Offcanvas Override ───────────────────────────────────── */
+.uk-offcanvas-bar { background: rgba(5,15,25,0.98) !important; }
+.uk-nav-default > li > a { color: rgba(255,255,255,0.7) !important; padding: 0.5rem 0; }
+.uk-nav-default > li > a:hover { color: var(--primary-light) !important; }
+
+/* ── Responsive ──────────────────────────────────────────────────── */
+@media (max-width: 640px) {
+  .portal-card { padding: 1.25rem; }
+  .tm-button, .btn-portal { width: 100%; }
+  .steps-container { gap: 0; }
+  .step-label { font-size: 0.6rem; }
+  .student-info-box { flex-direction: column; text-align: center; }
+}

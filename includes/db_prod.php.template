@@ -1,0 +1,9 @@
+<?php
+// Hostinger Production Database Configuration
+// Copy this file to includes/db_prod.php on the production server and update credentials
+
+define('DB_HOST', 'localhost');
+define('DB_PORT', 3306);
+define('DB_NAME', 'YOUR_DATABASE_NAME');
+define('DB_USER', 'YOUR_DATABASE_USER');
+define('DB_PASS', 'YOUR_DATABASE_PASSWORD');
