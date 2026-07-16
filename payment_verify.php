@@ -4,7 +4,6 @@
  */
 require_once __DIR__ . '/includes/helpers.php';
 require_once __DIR__ . '/includes/db.php';
-require_once __DIR__ . '/includes/secrets.php';
 requireStudentAuth();
 
 $sid = (int) $_SESSION['student_id'];
@@ -21,8 +20,7 @@ $_SESSION['pay_pending_ref_' . $sid] = $ref;
 
 $pdo       = getDB();
 $settings  = getSettings();
-// S01: Decrypt the stored secret key before use
-$secretKey = decryptSecret($settings['paystack_secret_key'] ?? '');
+$secretKey = getCredential('PAYSTACK_SECRET_KEY', 'paystack_secret_key')['value'];
 
 // ── Load student ─────────────────────────────────────────────────
 $stmt = $pdo->prepare("SELECT * FROM students WHERE id=? LIMIT 1");

@@ -197,6 +197,29 @@ function getSettings(): array {
 }
 function getSetting(string $key, string $default = ''): string { return getSettings()[$key] ?? $default; }
 
+/**
+ * Env-first, DB-fallback credential lookup (Paystack/Hubtel API keys).
+ * Prefers a real env var / .env value; falls back to the legacy
+ * system_settings value (decrypted if it was encrypted) so a deploy never
+ * breaks payments/SMS mid-migration. Returns the source so callers (the
+ * admin UI) can show whether a credential still needs migrating — unlike
+ * KIMTECH_SECRET_KEY's silent degrade-to-plaintext, this gap stays visible.
+ *
+ * @return array{value: string, source: 'env'|'db'|'none'}
+ */
+function getCredential(string $envKey, string $dbKey): array {
+    $envVal = getenv($envKey);
+    if ($envVal !== false && $envVal !== '') {
+        return ['value' => $envVal, 'source' => 'env'];
+    }
+    require_once __DIR__ . '/secrets.php';
+    $dbVal = decryptSecret(getSettings()[$dbKey] ?? '');
+    if ($dbVal !== '') {
+        return ['value' => $dbVal, 'source' => 'db'];
+    }
+    return ['value' => '', 'source' => 'none'];
+}
+
 // ── Audit log ────────────────────────────────────────────────────────────────
 function logAction(string $actorType, ?int $actorId, string $action, string $details = ''): void {
     try {
@@ -310,12 +333,10 @@ function isHouseAvailableForStudent(PDO $pdo, int $houseId, string $studentGende
 }
 
 // ── Hubtel SMS ───────────────────────────────────────────────────────────────
-function sendSmsDirect(string $phone, string $message, array $settings = []): bool {
-    if (empty($settings)) { $settings = getSettings(); }
-    require_once __DIR__ . '/secrets.php';
-    $clientId     = decryptSecret($settings['hubtel_client_id']     ?? '');
-    $clientSecret = decryptSecret($settings['hubtel_client_secret'] ?? '');
-    $senderId     = $settings['hubtel_sender_id']     ?? 'CDTI';
+function sendSmsDirect(string $phone, string $message): bool {
+    $clientId     = getCredential('HUBTEL_CLIENT_ID', 'hubtel_client_id')['value'];
+    $clientSecret = getCredential('HUBTEL_CLIENT_SECRET', 'hubtel_client_secret')['value'];
+    $senderId     = getCredential('HUBTEL_SENDER_ID', 'hubtel_sender_id')['value'] ?: 'CDTI';
 
     if (empty($clientId) || empty($clientSecret) || empty($phone)) return false;
 

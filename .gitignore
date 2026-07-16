@@ -21,3 +21,8 @@ cron/*.lock
 .DS_Store
 Thumbs.db
 *.swp
+
+# ── Internal docs — README.md is the only .md file the repo ships ───
+QA_FULL_AUDIT_REPORT.md
+*.md
+!README.md

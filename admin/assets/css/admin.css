@@ -298,6 +298,14 @@ body.light-mode .info-box.yellow { background: #fff8e1; border-color: #f4a261; c
 body.light-mode .info-box.blue   { background: #e8f4ff; border-color: #b8d9f8; color: #004080; }
 body.light-mode .info-box code   { background: rgba(0,0,0,0.08); }
 
+/* ── Credential Status (read-only, env-sourced) ──────────────────── */
+.credential-status {
+  padding: 0.65rem 0.9rem; background: var(--bg-input);
+  border: 1px solid var(--border); border-radius: 8px; font-size: 0.85rem;
+}
+.credential-status code { background: rgba(255,255,255,0.1); padding: 1px 5px; border-radius: 3px; font-size: 0.85em; }
+body.light-mode .credential-status code { background: rgba(0,0,0,0.08); }
+
 /* ── Tables ───────────────────────────────────────────────────── */
 .admin-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .admin-table thead th {

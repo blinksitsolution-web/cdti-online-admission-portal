@@ -10,7 +10,6 @@
 
 require_once __DIR__ . '/includes/db.php';
 require_once __DIR__ . '/includes/helpers.php';
-require_once __DIR__ . '/includes/secrets.php';
 
 // Only accept POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -21,9 +20,9 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 $rawBody   = file_get_contents('php://input');
 $signature = $_SERVER['HTTP_X_PAYSTACK_SIGNATURE'] ?? '';
 
-// ── Load secret key from DB ───────────────────────────────────────
+// ── Load secret key (env-first, DB fallback) ───────────────────────
 $settings  = getSettings();
-$secretKey = decryptSecret($settings['paystack_secret_key'] ?? '');
+$secretKey = getCredential('PAYSTACK_SECRET_KEY', 'paystack_secret_key')['value'];
 
 if (empty($secretKey)) {
     http_response_code(500);

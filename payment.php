@@ -26,7 +26,7 @@ if (in_array($student['payment_status'], ['paid','waived'])) {
 // Already completed registration
 if ($student['registration_status'] === 'completed') redirect(BASE_URL . '/dashboard');
 
-$paystackPub  = $s['paystack_public_key'] ?? '';
+$paystackPub  = getCredential('PAYSTACK_PUBLIC_KEY', 'paystack_public_key')['value'];
 $admissionFee = (float)($s['admission_fee'] ?? 50);
 $feeKobo      = (int)($admissionFee * 100);
 $schoolName   = $s['school_name'] ?? 'CDTI';

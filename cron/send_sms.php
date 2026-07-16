@@ -26,7 +26,6 @@ if (!$lockHandle || !flock($lockHandle, LOCK_EX | LOCK_NB)) {
 
 try {
     $pdo = getDB();
-    $settings = getSettings();
 
     // Fetch up to 30 pending SMS messages
     $stmt = $pdo->prepare("
@@ -68,7 +67,7 @@ try {
         echo "Sending to $phone (ID: $id, Attempt: $attempts)... ";
         
         try {
-            $success = sendSmsDirect($phone, $message, $settings);
+            $success = sendSmsDirect($phone, $message);
             if ($success) {
                 $updateSuccess->execute([$id]);
                 echo "SUCCESS\n";

@@ -37,8 +37,8 @@ Built for **Charlotte Dolphyne Technical Institute (CDTI)**, deployed on Hosting
 
 ```mermaid
 erDiagram
-    HOUSES ||--o{ STUDENTS : "assigned to (nullable)"
-    STUDENTS ||--o| PARENT_GUARDIAN_INFO : "has"
+    HOUSES ||--o{ STUDENTS : "assigned to"
+    STUDENTS ||--o| PARENT_GUARDIAN_INFO : has
 
     STUDENTS {
         int id PK
@@ -48,15 +48,15 @@ erDiagram
         enum gender
         date date_of_birth
         varchar program
-        enum residency "Boarder / Day"
+        enum residency
         varchar aggregate
-        enum registration_status "not_started / in_progress / completed"
+        enum registration_status
         varchar passport_photo_path
         int house_id FK
-        enum payment_status "pending / paid / waived"
+        enum payment_status
         varchar payment_reference
         decimal payment_amount
-        int admission_ref_seq "sequential admission letter ref"
+        int admission_ref_seq
         datetime created_at
     }
     PARENT_GUARDIAN_INFO {
@@ -73,15 +73,15 @@ erDiagram
     HOUSES {
         int id PK
         varchar name UK
-        enum gender "Male / Female"
+        enum gender
         int capacity
     }
     ADMINS {
         int id PK
         varchar username UK
         varchar password_hash
-        enum role "superadmin / staff"
-        text permissions "CSV of allowed sections"
+        enum role
+        text permissions
         datetime last_login
     }
     SYSTEM_SETTINGS {
@@ -91,8 +91,8 @@ erDiagram
     }
     AUDIT_LOGS {
         int id PK
-        enum actor_type "student / admin / system"
-        int actor_id "polymorphic, no FK"
+        enum actor_type
+        int actor_id
         varchar action
         text details
         varchar ip_address
@@ -109,7 +109,7 @@ erDiagram
         int id PK
         varchar phone
         text message
-        enum status "pending / sent / failed"
+        enum status
         int attempts
     }
     SMS_TEMPLATES {
@@ -118,6 +118,8 @@ erDiagram
         text message
     }
 ```
+
+Enum value sets: `students.residency` is `Boarder`/`Day`; `students.registration_status` is `not_started`/`in_progress`/`completed`; `students.payment_status` is `pending`/`paid`/`waived`; `houses.gender` and `students.gender` are `Male`/`Female`; `admins.role` is `superadmin`/`staff`; `audit_logs.actor_type` is `student`/`admin`/`system`; `sms_queue.status` is `pending`/`sent`/`failed`.
 
 `ADMINS`, `SYSTEM_SETTINGS`, `AUDIT_LOGS`, `AUDIT_LOGS_ARCHIVE`, `SMS_QUEUE`, and `SMS_TEMPLATES` are intentionally standalone — `audit_logs.actor_id` is polymorphic (student or admin) so it isn't a real foreign key, and the others are simple lookup/queue tables with no relational dependency on `STUDENTS`.
 
@@ -176,8 +178,7 @@ erDiagram
 ├── health.php                 GET /health — uptime monitor endpoint
 ├── setup.php                  One-time local installer (self-blocks outside localhost)
 ├── .env.example                Environment variable template
-├── .htaccess                   Pretty URLs, security headers, sensitive-file blocking
-└── QA_FULL_AUDIT_REPORT.md     Security/QA audit — see Support section
+└── .htaccess                   Pretty URLs, security headers, sensitive-file blocking
 ```
 
 ## Local development (Laragon)
@@ -206,6 +207,8 @@ cp .env.example .env
 |---|---|
 | `APP_ENV` | Set to `production` to hard-block `setup.php` |
 | `KIMTECH_SECRET_KEY` | AES-256-GCM key for encrypting stored API secrets (base64, 32 bytes) |
+| `PAYSTACK_PUBLIC_KEY` / `PAYSTACK_SECRET_KEY` | Paystack API keys (from dashboard.paystack.com) |
+| `HUBTEL_CLIENT_ID` / `HUBTEL_CLIENT_SECRET` / `HUBTEL_SENDER_ID` | Hubtel SMS API credentials (from developers.hubtel.com) |
 | `CRON_ALERT_EMAIL` | Receives an email if the SMS cron job crashes |
 
 Generate a secret key:
@@ -213,7 +216,19 @@ Generate a secret key:
 php -r "echo base64_encode(random_bytes(32));"
 ```
 
-On **Hostinger**: set env vars in hPanel → Advanced → PHP Configuration → Environment Variables (no `.env` file needed).
+**Prefer an actual `.env` file over Hostinger hPanel's env var UI.** hPanel-set variables aren't guaranteed to reach PHP's `getenv()` on every plan/PHP-FPM configuration — this is exactly what happened with `KIMTECH_SECRET_KEY` in this project's production deployment: it silently never resolved, so the encryption-at-rest feature for DB-stored secrets was never actually active (the app degrades gracefully to storing plaintext when the key is unavailable, with no visible error). The `.env` file loader (`includes/env.php`) doesn't depend on hPanel/PHP-FPM env propagation at all — it's parsed directly by the app — and is the mechanism this codebase actually relies on.
+
+### Paystack & Hubtel credentials (no longer in the database)
+
+`PAYSTACK_PUBLIC_KEY`, `PAYSTACK_SECRET_KEY`, `HUBTEL_CLIENT_ID`, `HUBTEL_CLIENT_SECRET`, and `HUBTEL_SENDER_ID` are read via `getCredential()` in `includes/helpers.php`, which checks the env var first and falls back to the legacy encrypted `system_settings` DB value if the env var isn't set yet — this is a **soft cutover** so deploying this code doesn't immediately break payments/SMS if you haven't set the env vars on the server yet. Admin → Settings → Payment/SMS now shows a read-only status per credential (green = sourced from env, amber = still falling back to the database, red = not configured anywhere) instead of editable fields — credentials are no longer writable through the admin UI at all.
+
+Once you've set all 5 in `.env` and confirmed the status badges are green, you can blank out the old DB values:
+```sql
+UPDATE system_settings SET setting_val = ''
+WHERE setting_key IN ('paystack_public_key','paystack_secret_key','hubtel_client_id','hubtel_client_secret','hubtel_sender_id');
+```
+
+Also **rotate the Paystack secret key** in the Paystack dashboard afterward — it was stored in plaintext in the database (see the `KIMTECH_SECRET_KEY` note above) and should be treated as potentially exposed.
 
 ## Deployment (production)
 
@@ -229,7 +244,7 @@ On **Hostinger**: set env vars in hPanel → Advanced → PHP Configuration → 
    `db_prod.php` is gitignored and must exist on the server — production fails with a clear error if it's missing.
 3. **Rotate the database password** if credentials were ever committed to git history.
 4. Apply schema and migrations in order (see [Migration order](#migration-order)).
-5. Configure Paystack keys in **Admin → Settings → Payment**.
+5. Set `PAYSTACK_PUBLIC_KEY`, `PAYSTACK_SECRET_KEY`, `HUBTEL_CLIENT_ID`, `HUBTEL_CLIENT_SECRET`, and `HUBTEL_SENDER_ID` in `.env` (see [Paystack & Hubtel credentials](#paystack--hubtel-credentials-no-longer-in-the-database)) — confirm Admin → Settings → Payment/SMS shows a green status for each.
 6. Register the Paystack webhook URL (see below).
 7. Set up the SMS cron job (see below).
 8. **Delete `setup.php`** from the production server after installation (it self-blocks once `db_prod.php` exists or the host isn't localhost, but removing it entirely is the safest option).
@@ -311,6 +326,8 @@ Every page emits its own per-request, nonce-based CSP via `emitCspHeader()` in `
 - Keep `uploads/.htaccess` in place to block script execution inside the uploads directory.
 - Change the default admin password (`admin` / `admin123`) immediately after first login.
 - Inline event-handler attributes (`onclick=`, `onchange=`, etc.) are always blocked by the nonce'd CSP regardless of nonce placement — wire up interactivity with `addEventListener` inside a nonce'd `<script>` block instead.
+- Paystack/Hubtel credentials live in `.env`, not the database — see [Paystack & Hubtel credentials](#paystack--hubtel-credentials-no-longer-in-the-database). Don't reintroduce editable credential fields in `admin/settings.php`; `getCredential()` in `includes/helpers.php` is the single source of truth for reading them.
+- Don't assume Hostinger hPanel env vars reach `getenv()` — verify with a diagnostic (`var_dump(getenv('...'))`) before relying on them; use an actual `.env` file if in doubt (see `KIMTECH_SECRET_KEY` note under Environment variables).
 
 ## Health check
 
@@ -322,4 +339,4 @@ Returns `200 {"status":"ok"}` when the database is reachable, `503 {"status":"de
 
 ## Support
 
-See `QA_FULL_AUDIT_REPORT.md` for the full security and QA audit, production readiness checklist, and remediation roadmap.
+Questions or issues — contact the maintainers listed in the repository, or open an issue against this project.

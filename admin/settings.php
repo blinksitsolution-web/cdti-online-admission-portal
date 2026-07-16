@@ -1,7 +1,6 @@
 <?php
 require_once __DIR__ . '/../includes/helpers.php';
 require_once __DIR__ . '/../includes/db.php';
-require_once __DIR__ . '/../includes/secrets.php';
 requireAdminAuth();
 requirePermission('settings');
 // Emit CSP header before any output — must be called before topbar.php
@@ -80,31 +79,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'house_master_signature_path' => $houseMasterSigPath,
             'admission_fee'            => number_format((float)($_POST['admission_fee'] ?? 50), 2, '.', ''),
             'payment_enabled'          => isset($_POST['payment_enabled']) ? '1' : '0',
-            'paystack_public_key'      => sanitize($_POST['paystack_public_key'] ?? ''),
-            'paystack_secret_key'      => sanitize($_POST['paystack_secret_key'] ?? ''), // overwritten below
-            'hubtel_client_id'         => sanitize($_POST['hubtel_client_id'] ?? ''),    // overwritten below
-            'hubtel_client_secret'     => sanitize($_POST['hubtel_client_secret'] ?? ''), // overwritten below
-            'hubtel_sender_id'         => sanitize($_POST['hubtel_sender_id'] ?? ''),
             'school_whatsapp_link'     => sanitize($_POST['school_whatsapp_link'] ?? ''),
             'sms_congratulations_template' => sanitize($_POST['sms_congratulations_template'] ?? ''),
         ];
         foreach ($deptKeys as $dk) { $map["dept_tools_{$dk}_path"] = $deptPaths[$dk]; }
-
-        // S01+S02: Encrypt sensitive API credentials before storing in DB.
-        // If the submitted value is blank, keep the existing stored value unchanged.
-        // If the submitted value equals the masked display value, also keep existing.
-        $sensitiveKeys = ['paystack_secret_key', 'hubtel_client_id', 'hubtel_client_secret'];
-        foreach ($sensitiveKeys as $sk) {
-            $submitted = trim($_POST[$sk] ?? '');
-            $existing  = $s[$sk] ?? '';
-            $existingPlain = decryptSecret($existing);
-            // Blank or unchanged masked value — keep existing stored (possibly encrypted) value
-            if ($submitted === '' || $submitted === maskSecret($existingPlain)) {
-                $map[$sk] = $existing;
-            } else {
-                $map[$sk] = encryptSecret($submitted);
-            }
-        }
+        // Paystack/Hubtel credentials are no longer editable here — they're
+        // sourced from .env via getCredential() (see #pane-payment/#pane-sms
+        // below for the read-only status display). Not included in $map at
+        // all, so this form can never write them back to the database.
 
         $upsert = $pdo->prepare("INSERT INTO system_settings (setting_key,setting_val) VALUES (?,?) ON DUPLICATE KEY UPDATE setting_val=?");
         foreach ($map as $k => $v) { $upsert->execute([$k,$v,$v]); }
@@ -132,6 +114,27 @@ $depts = [
     'home_economics' => '<i class="fa-solid fa-utensils"></i> Home Economics & Hospitality',
     'welding'        => '<i class="fa-solid fa-screwdriver-wrench"></i> Welding & Fabrication',
 ];
+
+// Paystack/Hubtel credentials: env-first, read-only display (see includes/helpers.php getCredential()).
+// This form never writes them back to the DB — see README.md "Environment variables".
+$paystackPubCred    = getCredential('PAYSTACK_PUBLIC_KEY', 'paystack_public_key');
+$paystackSecretCred = getCredential('PAYSTACK_SECRET_KEY', 'paystack_secret_key');
+$hubtelIdCred       = getCredential('HUBTEL_CLIENT_ID', 'hubtel_client_id');
+$hubtelSecretCred   = getCredential('HUBTEL_CLIENT_SECRET', 'hubtel_client_secret');
+$hubtelSenderCred   = getCredential('HUBTEL_SENDER_ID', 'hubtel_sender_id');
+
+function credentialStatusBadge(array $cred, string $envVarName): string {
+    switch ($cred['source']) {
+        case 'env':
+            return '<span style="color:var(--success);font-weight:700;">&#9989; Configured via environment variable</span>';
+        case 'db':
+            return '<span style="color:#e0a000;font-weight:700;">&#128993; Using legacy database value</span>'
+                 . '<br><small style="color:var(--text-muted);font-weight:400;">Set <code>' . htmlspecialchars($envVarName) . '</code> in <code>.env</code> to complete migration off the database.</small>';
+        default:
+            return '<span style="color:var(--danger);font-weight:700;">&#9888; Not configured</span>'
+                 . '<br><small style="color:var(--text-muted);font-weight:400;">Set <code>' . htmlspecialchars($envVarName) . '</code> in <code>.env</code>.</small>';
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -421,20 +424,15 @@ $depts = [
             <div class="form-row" style="margin-top:0.5rem;">
               <div class="form-group">
                 <label>Paystack Public Key</label>
-                <input type="text" name="paystack_public_key" value="<?= htmlspecialchars($s['paystack_public_key'] ?? '') ?>" placeholder="pk_live_xxxxxxxxxxxxxxxx" autocomplete="off">
+                <div class="credential-status"><?= credentialStatusBadge($paystackPubCred, 'PAYSTACK_PUBLIC_KEY') ?></div>
               </div>
               <div class="form-group">
                 <label>Paystack Secret Key</label>
-                <input type="password" name="paystack_secret_key"
-                       value="<?= htmlspecialchars(maskSecret(decryptSecret($s['paystack_secret_key'] ?? ''))) ?>"
-                       placeholder="sk_live_xxxxxxxxxxxxxxxx" autocomplete="new-password">
-                <div style="margin-top:0.35rem;">
-                  <label style="display:flex;align-items:center;gap:0.4rem;text-transform:none;letter-spacing:0;font-weight:400;font-size:0.78rem;cursor:pointer;">
-                    <input type="checkbox" id="showSecretKey" style="width:14px;height:14px;"> Show secret key
-                  </label>
-                  <small style="color:var(--text-muted);font-size:0.72rem;">Leave blank or unchanged to keep the existing key.</small>
-                </div>
+                <div class="credential-status"><?= credentialStatusBadge($paystackSecretCred, 'PAYSTACK_SECRET_KEY') ?></div>
               </div>
+            </div>
+            <div class="info-box yellow" style="margin-top:0.75rem;">
+              &#128274; Paystack keys are no longer editable here &mdash; they're read from <code>.env</code> on the server for security (credentials should never live in the database). See <code>README.md</code> &rarr; Environment variables.
             </div>
 
             <div class="info-box yellow">
@@ -456,22 +454,19 @@ $depts = [
             <div class="form-row three">
               <div class="form-group">
                 <label>Hubtel Client ID</label>
-                <input type="text" name="hubtel_client_id"
-                       value="<?= htmlspecialchars(maskSecret(decryptSecret($s['hubtel_client_id'] ?? ''))) ?>"
-                       placeholder="xxxxxxxx" autocomplete="off">
-                <small style="color:var(--text-muted);font-size:0.72rem;">Leave blank or unchanged to keep the existing ID.</small>
+                <div class="credential-status"><?= credentialStatusBadge($hubtelIdCred, 'HUBTEL_CLIENT_ID') ?></div>
               </div>
               <div class="form-group">
                 <label>Hubtel Client Secret</label>
-                <input type="password" name="hubtel_client_secret"
-                       value="<?= htmlspecialchars(maskSecret(decryptSecret($s['hubtel_client_secret'] ?? ''))) ?>"
-                       placeholder="xxxxxxxx" autocomplete="new-password">
-                <small style="color:var(--text-muted);font-size:0.72rem;">Leave blank or unchanged to keep the existing secret.</small>
+                <div class="credential-status"><?= credentialStatusBadge($hubtelSecretCred, 'HUBTEL_CLIENT_SECRET') ?></div>
               </div>
               <div class="form-group">
                 <label>SMS Sender ID <small style="text-transform:none;font-weight:400;">(max 11 chars)</small></label>
-                <input type="text" name="hubtel_sender_id" value="<?= htmlspecialchars($s['hubtel_sender_id'] ?? 'CDTI') ?>" maxlength="11" placeholder="CDTI">
+                <div class="credential-status"><?= credentialStatusBadge($hubtelSenderCred, 'HUBTEL_SENDER_ID') ?></div>
               </div>
+            </div>
+            <div class="info-box yellow">
+              &#128274; Hubtel credentials are no longer editable here &mdash; they're read from <code>.env</code> on the server for security. See <code>README.md</code> &rarr; Environment variables.
             </div>
             <div class="form-row" style="margin-top: 1rem;">
               <div class="form-group" style="flex: 1 1 100%;">
@@ -529,13 +524,6 @@ document.querySelectorAll('.tab-btn').forEach(function (btn) {
 // Flash success - auto-dismiss after 4s
 const alertEl = document.querySelector('.alert-success');
 if (alertEl) setTimeout(() => { alertEl.style.opacity='0'; alertEl.style.transition='opacity 0.5s'; setTimeout(()=>alertEl.remove(),500); }, 4000);
-// Show/hide Paystack secret key
-const showSecretKeyEl = document.getElementById('showSecretKey');
-if (showSecretKeyEl) {
-  showSecretKeyEl.addEventListener('change', function () {
-    this.closest('.form-group').querySelector('input[type=password]').type = this.checked ? 'text' : 'password';
-  });
-}
 </script>
 </body>
 </html>
