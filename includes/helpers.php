@@ -52,7 +52,7 @@ function emitCspHeader(bool $allowPaystackInlineScript = false): void {
         . $scriptSrc
         . "style-src 'self' 'nonce-{$n}' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://paystack.com 'unsafe-inline'; "
         . "img-src 'self' data: https://*.paystack.co; "
-        . "font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        . "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
         . "connect-src 'self' https://api.paystack.co https://standard.paystack.co https://*.pusher.com wss://*.pusher.com; "
         . "frame-src https://js.paystack.co https://checkout.paystack.com https://standard.paystack.co;"
     );
