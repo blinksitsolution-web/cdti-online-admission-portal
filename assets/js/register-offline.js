@@ -237,27 +237,69 @@ if ('serviceWorker' in navigator) {
     saveDraft();
   };
 
-  // Offline submit: queue instead of letting the browser attempt (and fail)
-  // a real network POST. Online submits are left completely alone — the
-  // browser's normal full-page form POST, unchanged from before this file
-  // existed. A mid-flight connectivity drop during an online-initiated
-  // submit is a known, pre-existing gap, not something this introduces.
-  form.addEventListener('submit', function (e) {
-    if (navigator.onLine) return;
-    e.preventDefault();
+  // Submit handling: every submit goes through fetch(), never a raw native
+  // form POST. This is deliberate — navigator.onLine only reports whether a
+  // network interface exists, not whether it actually reaches the internet
+  // (e.g. Wi-Fi with no working uplink still reads `true`). Trusting it to
+  // decide whether to *risk* a real page navigation meant a validation error
+  // on a "looks online but isn't" connection could still blow away the form.
+  // Now: try a live submit; only a real failed attempt falls back to the
+  // offline queue, and every outcome (success, validation error, conflict)
+  // is handled without ever navigating the page away.
+  var baseUrl = form.dataset.baseUrl || '';
+  var submitBtn = document.getElementById('submitBtn');
+  var FETCH_TIMEOUT_MS = 15000;
 
-    var photo = currentPhotoSelection();
-    OfflineDB.getDraft(indexNumber).then(function (existing) {
-      if (!clientUuid) clientUuid = (existing && existing.clientUuid) || generateUuid();
-      syncClientUuidField();
-      return OfflineDB.enqueueSubmission({
-        clientUuid: clientUuid,
-        indexNumber: indexNumber,
-        formData: formToObject(),
-        photoBlob: photo ? photo.blob : (existing ? existing.photoBlob : null),
-        photoMeta: photo ? photo.meta : (existing ? existing.photoMeta : null),
+  function fetchWithTimeout(url, options) {
+    var controller = new AbortController();
+    var timer = setTimeout(function () { controller.abort(); }, FETCH_TIMEOUT_MS);
+    return fetch(url, Object.assign({}, options, { signal: controller.signal }))
+      .finally(function () { clearTimeout(timer); });
+  }
+
+  function setSubmitting(isSubmitting) {
+    if (submitBtn) submitBtn.disabled = isSubmitting;
+  }
+
+  function buildSyncFormData(snapshot, token) {
+    var fd = new FormData();
+    fd.append('csrf_token', token);
+    fd.append('sync', '1');
+    fd.append('client_uuid', snapshot.clientUuid);
+    var data = snapshot.formData || {};
+    Object.keys(data).forEach(function (key) {
+      var val = data[key];
+      if (val === false) return; // unchecked checkbox — omit, matches native form encoding
+      if (val === true) val = '1';
+      fd.append(key, val == null ? '' : val);
+    });
+    if (snapshot.photoBlob) {
+      fd.append('passport_photo', snapshot.photoBlob, (snapshot.photoMeta && snapshot.photoMeta.name) || 'passport_photo.jpg');
+    }
+    return fd;
+  }
+
+  function renderErrors(errors) {
+    var banner = document.getElementById('formErrors');
+    if (banner) {
+      banner.innerHTML = '';
+      (errors || []).forEach(function (err) {
+        var div = document.createElement('div');
+        var icon = document.createElement('i');
+        icon.className = 'fa-solid fa-triangle-exclamation';
+        icon.setAttribute('aria-hidden', 'true');
+        div.appendChild(icon);
+        div.appendChild(document.createTextNode(' ' + err.msg));
+        banner.appendChild(div);
       });
-    }).then(function () {
+      banner.classList.remove('hidden');
+    }
+    var first = (errors && errors[0]) || {};
+    if (window.CDTI_focusFirstError) window.CDTI_focusFirstError(first.step || null, first.field || null);
+  }
+
+  function queueOffline(snapshot) {
+    return OfflineDB.enqueueSubmission(snapshot).then(function () {
       return Swal.fire({
         icon: 'info',
         title: "You're offline",
@@ -267,13 +309,139 @@ if ('serviceWorker' in navigator) {
         color: '#fff',
       });
     }).catch(function () {
-      Swal.fire({
+      return Swal.fire({
         icon: 'error',
         title: 'Could not save',
         text: "We couldn't save your registration on this device. Please try submitting again once you have a connection.",
         background: '#0f1e2d',
         color: '#fff',
       });
+    });
+  }
+
+  function handleSubmitResult(data) {
+    if (data.status === 'success') {
+      return OfflineDB.deleteDraft(indexNumber).then(function () {
+        window.location.href = baseUrl + '/dashboard';
+      });
+    }
+    if (data.status === 'conflict' && data.reason === 'house_unavailable') {
+      renderErrors([{ field: 'house_id', step: 2, msg: data.message || 'The selected house is no longer available.' }]);
+      return;
+    }
+    if (data.status === 'conflict' && data.reason === 'already_registered') {
+      return OfflineDB.deleteDraft(indexNumber).then(function () {
+        return Swal.fire({
+          icon: 'info',
+          title: 'Already completed',
+          text: data.message || 'Your registration was already completed — no action needed.',
+          confirmButtonText: 'Go to dashboard',
+          background: '#0f1e2d',
+          color: '#fff',
+        });
+      }).then(function () { window.location.href = baseUrl + '/dashboard'; });
+    }
+    if (data.status === 'conflict' && data.reason === 'payment_required') {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Payment required',
+        text: data.message || 'Your payment needs to be completed before this can be submitted.',
+        confirmButtonText: 'Go to payment',
+        background: '#0f1e2d',
+        color: '#fff',
+      }).then(function () { window.location.href = baseUrl + '/payment'; });
+    }
+    if (data.status === 'error' && data.reason === 'validation') {
+      renderErrors(data.errors);
+      return;
+    }
+    if (data.status === 'error' && data.reason === 'rate_limited') {
+      return Swal.fire({
+        icon: 'warning',
+        title: 'Too many attempts',
+        text: data.message || 'Please wait before trying again.',
+        background: '#0f1e2d',
+        color: '#fff',
+      });
+    }
+    // Unexpected response shape — surface it, but nothing is lost: the
+    // draft in IndexedDB and the on-screen form are both still intact.
+    return Swal.fire({
+      icon: 'error',
+      title: 'Something went wrong',
+      text: 'Please try again in a moment.',
+      background: '#0f1e2d',
+      color: '#fff',
+    });
+  }
+
+  function submitLive(snapshot) {
+    return fetchWithTimeout('/csrf_token', { credentials: 'same-origin' }).then(function (res) {
+      if (res.status === 401) {
+        var err = new Error('session_expired');
+        err.code = 'session_expired';
+        throw err;
+      }
+      if (!res.ok) throw new Error('token_fetch_failed');
+      return res.json();
+    }).then(function (tokenData) {
+      return fetchWithTimeout('/register.php', {
+        method: 'POST',
+        body: buildSyncFormData(snapshot, tokenData.token),
+        credentials: 'same-origin',
+      });
+    }).then(function (response) {
+      return response.json(); // every sync-mode response (200/409/422/429) is JSON
+    }).then(function (data) {
+      return handleSubmitResult(data);
+    });
+  }
+
+  form.addEventListener('submit', function (e) {
+    e.preventDefault();
+    setSubmitting(true);
+
+    OfflineDB.getDraft(indexNumber).then(function (existing) {
+      if (!clientUuid) clientUuid = (existing && existing.clientUuid) || generateUuid();
+      syncClientUuidField();
+      var photo = currentPhotoSelection();
+      var snapshot = {
+        clientUuid: clientUuid,
+        indexNumber: indexNumber,
+        formData: formToObject(),
+        currentStep: currentStep,
+        photoBlob: photo ? photo.blob : (existing ? existing.photoBlob : null),
+        photoMeta: photo ? photo.meta : (existing ? existing.photoMeta : null),
+      };
+      return OfflineDB.saveDraft(indexNumber, snapshot).then(function () { return snapshot; });
+    }).then(function (snapshot) {
+      if (!navigator.onLine) return queueOffline(snapshot);
+      return submitLive(snapshot).catch(function (err) {
+        if (err && err.code === 'session_expired') {
+          return Swal.fire({
+            icon: 'warning',
+            title: 'Session expired',
+            text: 'Please sign in again — your information is saved on this device and nothing was lost.',
+            confirmButtonText: 'Sign in',
+            background: '#0f1e2d',
+            color: '#fff',
+          }).then(function () { window.location.href = baseUrl + '/admissions'; });
+        }
+        // Any other failure (genuinely offline, timeout, server unreachable)
+        // regardless of what navigator.onLine claimed — fall back to the
+        // offline queue rather than losing the submission.
+        return queueOffline(snapshot);
+      });
+    }).catch(function () {
+      Swal.fire({
+        icon: 'error',
+        title: 'Could not save',
+        text: "We couldn't save your registration on this device. Please try again.",
+        background: '#0f1e2d',
+        color: '#fff',
+      });
+    }).then(function () {
+      setSubmitting(false);
     });
   });
 

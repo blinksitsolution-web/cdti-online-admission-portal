@@ -398,11 +398,9 @@ $ghanaRegions = [
         </div>
       </div>
 
-      <?php if (!empty($errors)): ?>
-      <div class="alert-error" id="formErrors" role="alert" aria-live="assertive" tabindex="-1" style="flex-direction:column;gap:0.25rem;align-items:flex-start;">
+      <div class="alert-error<?= empty($errors) ? ' hidden' : '' ?>" id="formErrors" role="alert" aria-live="assertive" tabindex="-1" style="flex-direction:column;gap:0.25rem;align-items:flex-start;">
         <?php foreach ($errors as $e): ?><div><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($e['msg']) ?></div><?php endforeach; ?>
       </div>
-      <?php endif; ?>
 
       <div id="queueBanner" class="queue-banner hidden" role="status" aria-live="polite">
         <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
@@ -425,7 +423,8 @@ $ghanaRegions = [
 
         <form method="POST" action="<?= BASE_URL ?>/register" enctype="multipart/form-data" id="regForm" autocomplete="off"
               data-index-number="<?= htmlspecialchars($student['index_number']) ?>"
-              data-has-errors="<?= !empty($errors) ? '1' : '' ?>">
+              data-has-errors="<?= !empty($errors) ? '1' : '' ?>"
+              data-base-url="<?= htmlspecialchars(BASE_URL) ?>">
         <?= csrfField() ?>
         <input type="hidden" name="client_uuid" id="client_uuid" value="">
 
@@ -867,17 +866,27 @@ document.getElementById('passport_photo').addEventListener('change', previewPhot
   if (el) el.addEventListener('input', function () { formatGhPhone(this); });
 });
 
-// Init
-if (firstErrorStep) {
-  currentStep = firstErrorStep;
-  updateStepUI(currentStep);
-  // Focus the specific invalid field if we have one, else the error banner.
-  const target = (firstErrorField && document.getElementById(firstErrorField))
-    || document.getElementById('formErrors');
+// Jumps to the step containing the first error and focuses the specific
+// invalid field (or the error banner itself for a field-less error like a
+// stale CSRF token). Shared by the initial server-rendered-error case below
+// and by register-offline.js's client-side (fetch-based) submit handler, so
+// both paths land the student in exactly the same place.
+function focusFirstError(step, field) {
+  if (step) {
+    currentStep = step;
+    updateStepUI(currentStep);
+  }
+  const target = (field && document.getElementById(field)) || document.getElementById('formErrors');
   if (target) {
     target.scrollIntoView({ behavior: 'smooth', block: 'center' });
     target.focus({ preventScroll: true });
   }
+}
+window.CDTI_focusFirstError = focusFirstError;
+
+// Init
+if (firstErrorStep) {
+  focusFirstError(firstErrorStep, firstErrorField);
 } else {
   updateStepUI(1);
 }
