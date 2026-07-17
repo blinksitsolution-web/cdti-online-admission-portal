@@ -10,7 +10,7 @@
  */
 'use strict';
 
-var CACHE_VERSION = 'v1';
+var CACHE_VERSION = 'v2';
 var SHELL_CACHE = 'cdti-register-shell-' + CACHE_VERSION;
 var OFFLINE_FALLBACK_URL = '/assets/offline-fallback.html';
 
@@ -63,7 +63,8 @@ self.addEventListener('activate', function (event) {
 });
 
 // Cache-first, background revalidate: instant load from cache, then quietly
-// refresh in the background so the *next* visit picks up any change.
+// refresh in the background so the *next* visit picks up any change. Used
+// for the page shell and vendor libraries — large, effectively static.
 function cacheFirstRevalidate(request) {
   return caches.open(SHELL_CACHE).then(function (cache) {
     return cache.match(request).then(function (cached) {
@@ -83,6 +84,26 @@ function cacheFirstRevalidate(request) {
   });
 }
 
+// Network-first, cache fallback: always run the latest version when online;
+// only fall back to whatever was last cached when a real fetch fails. Used
+// for this app's own logic (not the vendor libraries) — those get iterated
+// on, and a bug fix here needs to take effect on the very next online page
+// load rather than waiting on a service-worker update-and-reload cycle.
+var APP_JS_PATHS = ['/assets/js/offline-db.js', '/assets/js/register-offline.js', '/assets/js/sync-engine.js'];
+
+function networkFirstWithCacheFallback(request) {
+  return caches.open(SHELL_CACHE).then(function (cache) {
+    return fetch(request).then(function (response) {
+      if (response && response.ok) cache.put(request, response.clone());
+      return response;
+    }).catch(function () {
+      return cache.match(request).then(function (cached) {
+        return cached || caches.match(OFFLINE_FALLBACK_URL);
+      });
+    });
+  });
+}
+
 self.addEventListener('fetch', function (event) {
   var request = event.request;
 
@@ -93,6 +114,11 @@ self.addEventListener('fetch', function (event) {
 
   var url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (APP_JS_PATHS.indexOf(url.pathname) !== -1) {
+    event.respondWith(networkFirstWithCacheFallback(request));
+    return;
+  }
 
   if (request.mode === 'navigate' || url.pathname.indexOf('/assets/') === 0) {
     event.respondWith(cacheFirstRevalidate(request));
