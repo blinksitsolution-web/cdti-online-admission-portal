@@ -4,20 +4,51 @@ require_once __DIR__ . '/includes/db.php';
 requireStudentAuth();
 emitCspHeader();
 
-// Rate limit: max 5 registration POST submissions per student session per hour
+// A request from the offline sync engine (client_uuid identifies a queued
+// submission; sync=1 asks for a JSON response instead of the normal
+// HTML page/redirect). Neither field is ever sent by the plain HTML form,
+// so a request without them behaves exactly as before this was added.
+$isSyncRequest = $_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['sync'] ?? '') === '1';
+$clientUuid = '';
+if (isset($_POST['client_uuid']) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $_POST['client_uuid'])) {
+    $clientUuid = strtolower($_POST['client_uuid']);
+}
+
+// Rate limit: max 5 registration POST submissions per student session per hour.
+// A retry of the *same* client_uuid (the sync engine's own backoff re-attempting
+// a queued item) does not consume a new slot — only the first attempt of a
+// given UUID counts. See Phase 2 design §5.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $pdo = getDB();
     $sid  = (int) $_SESSION['student_id'];
     $ip   = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
-    $rlStmt = $pdo->prepare(
-        "SELECT COUNT(*) FROM audit_logs WHERE actor_id=? AND action='registration_attempt' AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)"
-    );
-    $rlStmt->execute([$sid]);
-    if ((int)$rlStmt->fetchColumn() >= 5) {
-        http_response_code(429);
-        die('Too many submission attempts. Please wait before trying again.');
+
+    $isRetryOfSameUuid = false;
+    if ($clientUuid !== '') {
+        $seenStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM audit_logs WHERE actor_id=? AND action='registration_attempt' AND details LIKE ?"
+        );
+        $seenStmt->execute([$sid, '%uuid:' . $clientUuid . '%']);
+        $isRetryOfSameUuid = (int) $seenStmt->fetchColumn() > 0;
     }
-    logAction('student', $sid, 'registration_attempt', "IP: $ip");
+
+    if (!$isRetryOfSameUuid) {
+        $rlStmt = $pdo->prepare(
+            "SELECT COUNT(*) FROM audit_logs WHERE actor_id=? AND action='registration_attempt' AND created_at > DATE_SUB(NOW(), INTERVAL 1 HOUR)"
+        );
+        $rlStmt->execute([$sid]);
+        if ((int)$rlStmt->fetchColumn() >= 5) {
+            if ($isSyncRequest) {
+                http_response_code(429);
+                header('Content-Type: application/json');
+                echo json_encode(['status' => 'error', 'reason' => 'rate_limited', 'message' => 'Too many submission attempts. Please wait before trying again.']);
+                exit;
+            }
+            http_response_code(429);
+            die('Too many submission attempts. Please wait before trying again.');
+        }
+        logAction('student', $sid, 'registration_attempt', "IP: $ip" . ($clientUuid !== '' ? "; uuid:$clientUuid" : ''));
+    }
 }
 
 $pdo  = getDB();
@@ -27,7 +58,22 @@ $stmt->execute([$sid]);
 $student = $stmt->fetch();
 
 if (!$student) { session_destroy(); redirect(BASE_URL . '/admissions'); }
-if ($student['registration_status'] === 'completed') { redirect(BASE_URL . '/dashboard'); }
+if ($student['registration_status'] === 'completed') {
+    if ($isSyncRequest) {
+        if ($clientUuid !== '' && $student['submission_uuid'] === $clientUuid) {
+            // Retry of a submission that already succeeded — safe no-op.
+            // Don't repeat the writes or resend the confirmation SMS.
+            header('Content-Type: application/json');
+            echo json_encode(['status' => 'success', 'already_completed' => true]);
+            exit;
+        }
+        http_response_code(409);
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'conflict', 'reason' => 'already_registered', 'message' => 'Your registration was already completed — no action needed.']);
+        exit;
+    }
+    redirect(BASE_URL . '/dashboard');
+}
 
 $s = getSettings();
 $logoPath   = !empty($s['school_logo_path']) ? $s['school_logo_path'] : 'assets/img/logo.png';
@@ -36,66 +82,87 @@ $schoolName = $s['school_name'] ?? 'CHARLOTTE DOLPHYNE TECHNICAL INSTITUTE';
 // Guard: payment required
 $payEnabled = ($s['payment_enabled'] ?? '1') === '1';
 if ($payEnabled && !in_array($student['payment_status'], ['paid','waived'])) {
+    if ($isSyncRequest) {
+        http_response_code(409);
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'conflict', 'reason' => 'payment_required', 'message' => 'Your payment needs to be completed before this can be submitted.']);
+        exit;
+    }
     redirect(BASE_URL . '/payment');
 }
 
 $reportingDate = $s['reporting_date'] ?? '15th September, 2026';
 $isBoarder = isBoarderResidency($student['residency'] ?? '');
 
-// ── POST: Save registration ───────────────────────────────────────
-$errors = [];
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
-        $errors[] = 'Invalid request. Please refresh and try again.';
-    } else {
-        // Collect & sanitize fields
-        $dob          = sanitize($_POST['dob'] ?? '');
-        $religion     = sanitize($_POST['religion'] ?? '');
-        $hometown     = sanitize($_POST['hometown'] ?? '');
-        $region       = sanitize($_POST['region'] ?? '');
-        $nationality  = sanitize($_POST['nationality'] ?? 'Ghanaian');
-        $prev_jhs     = sanitize($_POST['prev_jhs'] ?? '');
-        $prev_idx     = sanitize($_POST['prev_jhs_index'] ?? '');
-        $enrol_code   = sanitize($_POST['enrolment_code'] ?? '');
-        $aggregate    = sanitize($_POST['aggregate'] ?? '');
-        $father_name  = sanitize($_POST['father_name'] ?? '');
-        $father_phone = sanitize($_POST['father_phone'] ?? '');
-        $father_addr  = sanitize($_POST['father_address'] ?? '');
-        $father_occ   = sanitize($_POST['father_occupation'] ?? '');
-        $mother_name  = sanitize($_POST['mother_name'] ?? '');
-        $mother_phone = sanitize($_POST['mother_phone'] ?? '');
-        $mother_addr  = sanitize($_POST['mother_address'] ?? '');
-        $mother_occ   = sanitize($_POST['mother_occupation'] ?? '');
-        $grd_name     = sanitize($_POST['guardian_name'] ?? '');
-        $grd_phone    = sanitize($_POST['guardian_phone'] ?? '');
-        $grd_addr     = sanitize($_POST['guardian_address'] ?? '');
-        $grd_rel      = sanitize($_POST['guardian_relationship'] ?? '');
-        $declaration  = isset($_POST['declaration']) ? 1 : 0;
-        $houseId      = (int) ($_POST['house_id'] ?? 0);
+$parentStmt = $pdo->prepare("SELECT * FROM parent_guardian_info WHERE student_id=?");
+$parentStmt->execute([$sid]);
+$parentInfo = $parentStmt->fetch() ?: [];
 
+$isPost = $_SERVER['REQUEST_METHOD'] === 'POST';
+
+// ── Field values: submitted value on a failed POST, existing record on a
+// fresh load. This is the fix for "the form resets on a validation error" —
+// the page never actually lost $_POST, the template just never looked at
+// it. Every field below is now a single source of truth for the form HTML.
+$dob          = $isPost ? sanitize($_POST['dob'] ?? '')                  : ($student['date_of_birth'] ?? '');
+$religion     = $isPost ? sanitize($_POST['religion'] ?? '')             : ($student['religion'] ?? '');
+$hometown     = $isPost ? sanitize($_POST['hometown'] ?? '')             : ($student['hometown'] ?? '');
+$region       = $isPost ? sanitize($_POST['region'] ?? '')               : ($student['region'] ?? '');
+$nationality  = $isPost ? sanitize($_POST['nationality'] ?? 'Ghanaian')  : ($student['nationality'] ?? 'Ghanaian');
+$prev_jhs     = $isPost ? sanitize($_POST['prev_jhs'] ?? '')             : ($student['prev_jhs_school'] ?? '');
+$prev_idx     = $isPost ? sanitize($_POST['prev_jhs_index'] ?? '')       : ($student['prev_jhs_index'] ?: $student['index_number']);
+$enrol_code   = $isPost ? sanitize($_POST['enrolment_code'] ?? '')       : ($student['enrolment_code'] ?? '');
+$aggregate    = $isPost ? sanitize($_POST['aggregate'] ?? '')            : ($student['aggregate'] ?? '');
+$father_name  = $isPost ? sanitize($_POST['father_name'] ?? '')          : ($parentInfo['father_name'] ?? '');
+$father_phone = $isPost ? sanitize($_POST['father_phone'] ?? '')         : ($parentInfo['father_phone'] ?? '');
+$father_addr  = $isPost ? sanitize($_POST['father_address'] ?? '')       : ($parentInfo['father_address'] ?? '');
+$father_occ   = $isPost ? sanitize($_POST['father_occupation'] ?? '')    : ($parentInfo['father_occupation'] ?? '');
+$mother_name  = $isPost ? sanitize($_POST['mother_name'] ?? '')          : ($parentInfo['mother_name'] ?? '');
+$mother_phone = $isPost ? sanitize($_POST['mother_phone'] ?? '')         : ($parentInfo['mother_phone'] ?? '');
+$mother_addr  = $isPost ? sanitize($_POST['mother_address'] ?? '')       : ($parentInfo['mother_address'] ?? '');
+$mother_occ   = $isPost ? sanitize($_POST['mother_occupation'] ?? '')    : ($parentInfo['mother_occupation'] ?? '');
+$grd_name     = $isPost ? sanitize($_POST['guardian_name'] ?? '')        : ($parentInfo['guardian_name'] ?? '');
+$grd_phone    = $isPost ? sanitize($_POST['guardian_phone'] ?? '')       : ($parentInfo['guardian_phone'] ?? '');
+$grd_addr     = $isPost ? sanitize($_POST['guardian_address'] ?? '')     : ($parentInfo['guardian_address'] ?? '');
+$grd_rel      = $isPost ? sanitize($_POST['guardian_relationship'] ?? '') : ($parentInfo['guardian_relationship'] ?? '');
+$declaration  = $isPost ? (isset($_POST['declaration']) ? 1 : 0)         : 0;
+$houseId      = $isPost ? (int) ($_POST['house_id'] ?? 0)                : (int) ($student['house_id'] ?? 0);
+// Baseline photo = whatever's already on file; the upload-processing block
+// inside the POST branch below overwrites this only on a successful upload.
+$photoPath    = $student['passport_photo_path'] ?? '';
+
+// ── POST: Save registration ───────────────────────────────────────
+// $errors is a list of ['field'=>string|null, 'step'=>int|null, 'msg'=>string]
+// — field/step drive the auto-scroll/focus behaviour below; null means a
+// general error not tied to one input (e.g. CSRF failure).
+$errors = [];
+if ($isPost) {
+    if (!verifyCsrfToken($_POST['csrf_token'] ?? '')) {
+        $errors[] = ['field' => null, 'step' => null, 'msg' => 'Invalid request. Please refresh and try again.'];
+    } else {
         // Validate required
-        if (empty($dob))      $errors[] = 'Date of Birth is required.';
-        if (empty($religion)) $errors[] = 'Religion is required.';
-        if (empty($hometown)) $errors[] = 'Hometown is required.';
-        if (empty($region))   $errors[] = 'Region is required.';
-        if (empty($prev_jhs)) $errors[] = 'Previous JHS name is required.';
+        if (empty($dob))      $errors[] = ['field' => 'dob', 'step' => 1, 'msg' => 'Date of Birth is required.'];
+        if (empty($religion)) $errors[] = ['field' => 'religion', 'step' => 1, 'msg' => 'Religion is required.'];
+        if (empty($hometown)) $errors[] = ['field' => 'hometown', 'step' => 1, 'msg' => 'Hometown is required.'];
+        if (empty($region))   $errors[] = ['field' => 'region', 'step' => 1, 'msg' => 'Region is required.'];
+        if (empty($prev_jhs)) $errors[] = ['field' => 'prev_jhs', 'step' => 1, 'msg' => 'Previous JHS name is required.'];
         if (empty($enrol_code)) {
-            $errors[] = 'Enrolment code is required.';
+            $errors[] = ['field' => 'enrolment_code', 'step' => 2, 'msg' => 'Enrolment code is required.'];
         } elseif (!validateEnrolmentCode($enrol_code)) {
-            $errors[] = 'Enrolment code must be 4–10 digits.';
+            $errors[] = ['field' => 'enrolment_code', 'step' => 2, 'msg' => 'Enrolment code must be 4–10 letters and/or numbers.'];
         }
         if (empty($aggregate)) {
-            $errors[] = 'BECE aggregate is required.';
+            $errors[] = ['field' => 'aggregate', 'step' => 2, 'msg' => 'BECE aggregate is required.'];
         } elseif (!preg_match('/^\d{1,2}$/', $aggregate) || (int) $aggregate < 6 || (int) $aggregate > 54) {
-            $errors[] = 'BECE aggregate must be a number between 6 and 54.';
+            $errors[] = ['field' => 'aggregate', 'step' => 2, 'msg' => 'BECE aggregate must be a number between 6 and 54.'];
         }
-        if (!$declaration)    $errors[] = 'You must accept the declaration to submit.';
+        if (!$declaration) $errors[] = ['field' => 'declaration', 'step' => 5, 'msg' => 'You must accept the declaration to submit.'];
 
         if ($isBoarder) {
             if ($houseId < 1) {
-                $errors[] = 'Please select a boarding house.';
+                $errors[] = ['field' => 'house_id', 'step' => 2, 'msg' => 'Please select a boarding house.'];
             } elseif (!isHouseAvailableForStudent($pdo, $houseId, normalizeStudentGender($student['gender']), $sid)) {
-                $errors[] = 'The selected house is no longer available. Please choose another house.';
+                $errors[] = ['field' => 'house_id', 'step' => 2, 'msg' => 'The selected house is no longer available. Please choose another house.'];
             }
         } else {
             $houseId = 0;
@@ -111,16 +178,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             return preg_match('/^(\+233|233|0)(2[0-9]|5[0-9]|3[0-9])[0-9]{7}$/', $test) === 1;
         };
         if (!empty($father_phone) && !$isValidPhone($father_phone)) {
-            $errors[] = "Father's phone number is invalid. Must match Ghanaian format.";
+            $errors[] = ['field' => 'father_phone', 'step' => 3, 'msg' => "Father's phone number is invalid. Must match Ghanaian format."];
         }
         if (!empty($mother_phone) && !$isValidPhone($mother_phone)) {
-            $errors[] = "Mother's phone number is invalid. Must match Ghanaian format.";
+            $errors[] = ['field' => 'mother_phone', 'step' => 3, 'msg' => "Mother's phone number is invalid. Must match Ghanaian format."];
         }
         if (!empty($grd_phone) && !$isValidPhone($grd_phone)) {
-            $errors[] = "Guardian's phone number is invalid. Must match Ghanaian format.";
+            $errors[] = ['field' => 'guardian_phone', 'step' => 3, 'msg' => "Guardian's phone number is invalid. Must match Ghanaian format."];
         }
 
-        $photoPath = $student['passport_photo_path'] ?? '';
         if (!empty($_FILES['passport_photo']['name'])) {
             $file    = $_FILES['passport_photo'];
             $allowed = ['image/jpeg', 'image/png', 'image/jpg'];
@@ -135,11 +201,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             };
 
             if (!in_array($mime, $allowed)) {
-                $errors[] = 'Passport photo must be a JPG or PNG image.';
+                $errors[] = ['field' => 'passport_photo', 'step' => 4, 'msg' => 'Passport photo must be a JPG or PNG image.'];
             } elseif (!validateUploadMagicBytes($file['tmp_name'], $magicType)) {
-                $errors[] = 'Passport photo file content does not match its type. Please upload a real JPG or PNG image.';
+                $errors[] = ['field' => 'passport_photo', 'step' => 4, 'msg' => 'Passport photo file content does not match its type. Please upload a real JPG or PNG image.'];
             } elseif ($file['size'] > 5 * 1024 * 1024) {
-                $errors[] = 'Passport photo must be smaller than 5MB.';
+                $errors[] = ['field' => 'passport_photo', 'step' => 4, 'msg' => 'Passport photo must be smaller than 5MB.'];
             } else {
                 // S07: Re-encode image via GD to strip any embedded payloads
                 $srcImage = match($magicType) {
@@ -148,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     default => false,
                 };
                 if (!$srcImage) {
-                    $errors[] = 'Could not process the uploaded image. Please try a different photo.';
+                    $errors[] = ['field' => 'passport_photo', 'step' => 4, 'msg' => 'Could not process the uploaded image. Please try a different photo.'];
                 } else {
                     // Resize to max 800px on longest side
                     $origW = imagesx($srcImage);
@@ -172,12 +238,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $photoPath = 'uploads/passports/' . $filename;
                     } else {
                         imagedestroy($srcImage);
-                        $errors[] = 'Failed to save photo. Please try again.';
+                        $errors[] = ['field' => 'passport_photo', 'step' => 4, 'msg' => 'Failed to save photo. Please try again.'];
                     }
                 }
             }
         } elseif (empty($photoPath)) {
-            $errors[] = 'Passport photo is required.';
+            $errors[] = ['field' => 'passport_photo', 'step' => 4, 'msg' => 'Passport photo is required.'];
         }
 
         if (empty($errors)) {
@@ -185,11 +251,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare("UPDATE students SET
                 date_of_birth=?, religion=?, hometown=?, region=?, nationality=?,
                 prev_jhs_school=?, prev_jhs_index=?, enrolment_code=?, aggregate=?,
-                passport_photo_path=?, house_id=?, registration_status='completed', registered_at=NOW()
+                passport_photo_path=?, house_id=?, submission_uuid=?, registration_status='completed', registered_at=NOW()
                 WHERE id=?
             ")->execute([$dob, $religion, $hometown, $region, $nationality,
                          $prev_jhs, $prev_idx, $enrol_code, $aggregate, $photoPath,
-                         $houseId > 0 ? $houseId : null, $sid]);
+                         $houseId > 0 ? $houseId : null, $clientUuid !== '' ? $clientUuid : null, $sid]);
 
             // Parent info — delete old and re-insert
             $pdo->prepare("DELETE FROM parent_guardian_info WHERE student_id=?")->execute([$sid]);
@@ -227,8 +293,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 sendSms($phone, $smsMsg, $s);
             }
 
+            if ($isSyncRequest) {
+                header('Content-Type: application/json');
+                echo json_encode(['status' => 'success']);
+                exit;
+            }
             redirect(BASE_URL . '/dashboard');
         }
+    }
+
+    // Reached only when $errors is non-empty (the success branch above
+    // always exits) — hand the sync engine structured errors instead of
+    // the HTML page it has no use for.
+    if ($isSyncRequest) {
+        http_response_code(422);
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'reason' => 'validation', 'errors' => $errors]);
+        exit;
     }
 }
 
@@ -246,11 +327,15 @@ $ghanaRegions = [
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Register | <?= htmlspecialchars($student['full_name']) ?></title>
   <link rel="icon" href="<?= asset($logoPath) ?>">
+  <link rel="manifest" href="<?= BASE_URL ?>/manifest">
+  <meta name="theme-color" content="#006fa0">
   <link rel="stylesheet" href="<?= asset('assets/css/main.css') ?>">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uikit@3.21.0/dist/css/uikit.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <!-- Self-hosted (not CDN) so the service worker can cache these for offline
+       loads — see Phase 2 design decision on CDN-dependency risk. -->
+  <link rel="stylesheet" href="<?= asset('assets/vendor/fontawesome/css/all.min.css') ?>">
+  <link rel="stylesheet" href="<?= asset('assets/vendor/uikit/css/uikit.min.css') ?>">
+  <link rel="stylesheet" href="<?= asset('assets/vendor/bootstrap/css/bootstrap.min.css') ?>">
+  <link rel="stylesheet" href="<?= asset('assets/vendor/sweetalert2/sweetalert2.min.css') ?>">
   <script nonce="<?= generateCspNonce() ?>">
     function disableBack() { window.history.forward(); }
     setTimeout(disableBack, 0);
@@ -269,7 +354,11 @@ $ghanaRegions = [
           </span>
           <a class="uk-navbar-item uk-logo" href="<?= BASE_URL ?>/index" style="margin-left:-4px;font-weight:700;"><?= htmlspecialchars($schoolName) ?></a>
         </div>
-        <div class="uk-navbar-right">
+        <div class="uk-navbar-right" style="gap:0.75rem;display:flex;align-items:center;">
+          <span id="networkStatus" class="network-status" role="status" aria-live="polite" data-state="online">
+            <i class="fa-solid fa-wifi" id="networkStatusIcon" aria-hidden="true"></i>
+            <span id="networkStatusText">Online</span>
+          </span>
           <a href="<?= BASE_URL ?>/logout" class="uk-button uk-button-default uk-button-small" style="border-radius:20px;color:#fff;border-color:rgba(255,255,255,0.3);">Logout</a>
         </div>
       </div>
@@ -309,11 +398,16 @@ $ghanaRegions = [
         </div>
       </div>
 
-      <?php if (!empty($errors)): ?>
-      <div class="alert-error" style="flex-direction:column;gap:0.25rem;align-items:flex-start;">
-        <?php foreach ($errors as $e): ?><div><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($e) ?></div><?php endforeach; ?>
+      <div class="alert-error<?= empty($errors) ? ' hidden' : '' ?>" id="formErrors" role="alert" aria-live="assertive" tabindex="-1" style="flex-direction:column;gap:0.25rem;align-items:flex-start;">
+        <?php foreach ($errors as $e): ?><div><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($e['msg']) ?></div><?php endforeach; ?>
       </div>
-      <?php endif; ?>
+
+      <div id="queueBanner" class="queue-banner hidden" role="status" aria-live="polite">
+        <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
+        <span id="queueBannerText"></span>
+      </div>
+
+      <p id="draftStatus" role="status" aria-live="polite" style="text-align:right;font-size:0.75rem;color:var(--text-muted);margin:0 0 0.5rem;min-height:1.1em;"></p>
 
       <!-- PROGRESS BAR -->
       <div class="steps-container">
@@ -327,8 +421,12 @@ $ghanaRegions = [
         <?php endforeach; ?>
       </div>
 
-        <form method="POST" action="<?= BASE_URL ?>/register" enctype="multipart/form-data" id="regForm" autocomplete="off">
+        <form method="POST" action="<?= BASE_URL ?>/register" enctype="multipart/form-data" id="regForm" autocomplete="off"
+              data-index-number="<?= htmlspecialchars($student['index_number']) ?>"
+              data-has-errors="<?= !empty($errors) ? '1' : '' ?>"
+              data-base-url="<?= htmlspecialchars(BASE_URL) ?>">
         <?= csrfField() ?>
+        <input type="hidden" name="client_uuid" id="client_uuid" value="">
 
         <!-- STEP 1: Bio-Data -->
         <div class="form-step active" id="step1">
@@ -337,7 +435,7 @@ $ghanaRegions = [
             <div class="col-md-6">
               <div class="uk-margin">
                 <label class="uk-form-label">Date of Birth *</label>
-                <input class="uk-input" type="date" name="dob" id="dob" required>
+                <input class="uk-input" type="date" name="dob" id="dob" value="<?= htmlspecialchars($dob) ?>" required>
               </div>
             </div>
             <div class="col-md-6">
@@ -345,10 +443,9 @@ $ghanaRegions = [
                 <label class="uk-form-label">Religion *</label>
                 <select class="uk-input portal-select" name="religion" id="religion" required>
                   <option value="">Select Religion</option>
-                  <option value="Christian">Christian</option>
-                  <option value="Muslim">Muslim</option>
-                  <option value="Traditional">Traditional</option>
-                  <option value="Other">Other</option>
+                  <?php foreach (['Christian','Muslim','Traditional','Other'] as $rOpt): ?>
+                  <option value="<?= $rOpt ?>" <?= $religion === $rOpt ? 'selected' : '' ?>><?= $rOpt ?></option>
+                  <?php endforeach; ?>
                 </select>
               </div>
             </div>
@@ -357,7 +454,7 @@ $ghanaRegions = [
             <div class="col-md-6">
               <div class="uk-margin">
                 <label class="uk-form-label">Hometown *</label>
-                <input class="uk-input" type="text" name="hometown" placeholder="e.g. Kikam">
+                <input class="uk-input" type="text" name="hometown" id="hometown" value="<?= htmlspecialchars($hometown) ?>" placeholder="e.g. Kikam">
               </div>
             </div>
             <div class="col-md-6">
@@ -366,7 +463,7 @@ $ghanaRegions = [
                 <select class="uk-input portal-select" name="region" id="region" required>
                   <option value="">Select Region</option>
                   <?php foreach ($ghanaRegions as $r): ?>
-                  <option value="<?= $r ?>"><?= $r ?></option>
+                  <option value="<?= $r ?>" <?= $region === $r ? 'selected' : '' ?>><?= $r ?></option>
                   <?php endforeach; ?>
                 </select>
               </div>
@@ -376,19 +473,19 @@ $ghanaRegions = [
             <div class="col-md-6">
               <div class="uk-margin">
                 <label class="uk-form-label">Nationality</label>
-                <input class="uk-input" type="text" name="nationality" value="Ghanaian">
+                <input class="uk-input" type="text" name="nationality" value="<?= htmlspecialchars($nationality) ?>">
               </div>
             </div>
             <div class="col-md-6">
               <div class="uk-margin">
                 <label class="uk-form-label">Previous JHS Index No.</label>
-                <input class="uk-input" type="text" name="prev_jhs_index" value="<?= htmlspecialchars($student['prev_jhs_index'] ?: $student['index_number']) ?>" placeholder="BECE Index Number">
+                <input class="uk-input" type="text" name="prev_jhs_index" value="<?= htmlspecialchars($prev_idx) ?>" placeholder="BECE Index Number">
               </div>
             </div>
           </div>
           <div class="uk-margin">
             <label class="uk-form-label">Previous JHS School Name *</label>
-            <input class="uk-input" type="text" name="prev_jhs" value="<?= htmlspecialchars($student['prev_jhs_school'] ?? '') ?>" placeholder="e.g. Kikam RC JHS">
+            <input class="uk-input" type="text" name="prev_jhs" id="prev_jhs" value="<?= htmlspecialchars($prev_jhs) ?>" placeholder="e.g. Kikam RC JHS">
           </div>
           <div class="step-nav-btns">
             <button type="button" class="btn-step btn-next" data-step="1">Next <i class="fa-solid fa-arrow-right"></i></button>
@@ -417,7 +514,7 @@ $ghanaRegions = [
               <div class="uk-margin">
                 <label class="uk-form-label">BECE Aggregate *</label>
                 <input class="uk-input" type="number" name="aggregate" id="aggregate" min="6" max="54" step="1"
-                       value="<?= htmlspecialchars($student['aggregate'] ?? '') ?>"
+                       value="<?= htmlspecialchars($aggregate) ?>"
                        placeholder="e.g. 12" required>
               </div>
             </div>
@@ -425,7 +522,7 @@ $ghanaRegions = [
               <div class="uk-margin">
                 <label class="uk-form-label">Enrolment Code (from placement form) *</label>
                 <input class="uk-input" type="text" name="enrolment_code" id="enrolment_code"
-                       value="<?= htmlspecialchars($student['enrolment_code'] ?? '') ?>"
+                       value="<?= htmlspecialchars($enrol_code) ?>"
                        placeholder="Your enrolment code" required>
               </div>
             </div>
@@ -442,7 +539,7 @@ $ghanaRegions = [
             <select class="uk-input portal-select" name="house_id" id="house_id" required>
               <option value="">Select your house</option>
               <?php foreach ($availableHouses as $house): ?>
-              <option value="<?= (int) $house['id'] ?>">
+              <option value="<?= (int) $house['id'] ?>" <?= $houseId === (int) $house['id'] ? 'selected' : '' ?>>
                 <?= htmlspecialchars($house['name']) ?> (<?= (int) $house['remaining'] ?> bed<?= $house['remaining'] === 1 ? '' : 's' ?> left)
               </option>
               <?php endforeach; ?>
@@ -462,32 +559,32 @@ $ghanaRegions = [
           <!-- Father -->
           <p style="color:var(--warning);font-weight:600;margin-bottom:0.5rem;font-size:0.85rem;text-transform:uppercase;">Father's Information</p>
           <div class="row">
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Father's Full Name</label><input class="uk-input" type="text" name="father_name" placeholder="Full name"></div></div>
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Phone Number <small style="color:#4dd8ff;font-size:0.72rem;">(Ghana: 024x/054x/055x...)</small></label><input class="uk-input" type="tel" name="father_phone" id="father_phone" placeholder="e.g. 0244000001" maxlength="13"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Father's Full Name</label><input class="uk-input" type="text" name="father_name" value="<?= htmlspecialchars($father_name) ?>" placeholder="Full name"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Phone Number <small style="color:#4dd8ff;font-size:0.72rem;">(Ghana: 024x/054x/055x...)</small></label><input class="uk-input" type="tel" name="father_phone" id="father_phone" value="<?= htmlspecialchars($father_phone) ?>" placeholder="e.g. 0244000001" maxlength="13"></div></div>
           </div>
           <div class="row">
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Occupation</label><input class="uk-input" type="text" name="father_occupation" placeholder="e.g. Farmer"></div></div>
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Address</label><input class="uk-input" type="text" name="father_address" placeholder="Home address"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Occupation</label><input class="uk-input" type="text" name="father_occupation" value="<?= htmlspecialchars($father_occ) ?>" placeholder="e.g. Farmer"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Address</label><input class="uk-input" type="text" name="father_address" value="<?= htmlspecialchars($father_addr) ?>" placeholder="Home address"></div></div>
           </div>
           <!-- Mother -->
           <p style="color:var(--warning);font-weight:600;margin:1rem 0 0.5rem;font-size:0.85rem;text-transform:uppercase;">Mother's Information</p>
           <div class="row">
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Mother's Full Name</label><input class="uk-input" type="text" name="mother_name" placeholder="Full name"></div></div>
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Phone Number <small style="color:#4dd8ff;font-size:0.72rem;">(Ghana: 024x/054x/055x...)</small></label><input class="uk-input" type="tel" name="mother_phone" id="mother_phone" placeholder="e.g. 0244000001" maxlength="13"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Mother's Full Name</label><input class="uk-input" type="text" name="mother_name" value="<?= htmlspecialchars($mother_name) ?>" placeholder="Full name"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Phone Number <small style="color:#4dd8ff;font-size:0.72rem;">(Ghana: 024x/054x/055x...)</small></label><input class="uk-input" type="tel" name="mother_phone" id="mother_phone" value="<?= htmlspecialchars($mother_phone) ?>" placeholder="e.g. 0244000001" maxlength="13"></div></div>
           </div>
           <div class="row">
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Occupation</label><input class="uk-input" type="text" name="mother_occupation" placeholder="e.g. Trader"></div></div>
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Address</label><input class="uk-input" type="text" name="mother_address" placeholder="Home address"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Occupation</label><input class="uk-input" type="text" name="mother_occupation" value="<?= htmlspecialchars($mother_occ) ?>" placeholder="e.g. Trader"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Address</label><input class="uk-input" type="text" name="mother_address" value="<?= htmlspecialchars($mother_addr) ?>" placeholder="Home address"></div></div>
           </div>
           <!-- Guardian -->
           <p style="color:var(--warning);font-weight:600;margin:1rem 0 0.5rem;font-size:0.85rem;text-transform:uppercase;">Guardian Information (if applicable)</p>
           <div class="row">
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Guardian Full Name</label><input class="uk-input" type="text" name="guardian_name" placeholder="Full name"></div></div>
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Phone Number <small style="color:#4dd8ff;font-size:0.72rem;">(Ghana: 024x/054x/055x...)</small></label><input class="uk-input" type="tel" name="guardian_phone" id="guardian_phone" placeholder="e.g. 0244000001" maxlength="13"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Guardian Full Name</label><input class="uk-input" type="text" name="guardian_name" value="<?= htmlspecialchars($grd_name) ?>" placeholder="Full name"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Phone Number <small style="color:#4dd8ff;font-size:0.72rem;">(Ghana: 024x/054x/055x...)</small></label><input class="uk-input" type="tel" name="guardian_phone" id="guardian_phone" value="<?= htmlspecialchars($grd_phone) ?>" placeholder="e.g. 0244000001" maxlength="13"></div></div>
           </div>
           <div class="row">
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Relationship</label><input class="uk-input" type="text" name="guardian_relationship" placeholder="e.g. Uncle, Aunt"></div></div>
-            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Address</label><input class="uk-input" type="text" name="guardian_address" placeholder="Home address"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Relationship</label><input class="uk-input" type="text" name="guardian_relationship" value="<?= htmlspecialchars($grd_rel) ?>" placeholder="e.g. Uncle, Aunt"></div></div>
+            <div class="col-md-6"><div class="uk-margin"><label class="uk-form-label">Address</label><input class="uk-input" type="text" name="guardian_address" value="<?= htmlspecialchars($grd_addr) ?>" placeholder="Home address"></div></div>
           </div>
           <div class="step-nav-btns">
             <button type="button" class="btn-step btn-back" data-step="3"><i class="fa-solid fa-arrow-left"></i> Back</button>
@@ -500,15 +597,15 @@ $ghanaRegions = [
           <h5 style="color:var(--primary-light);margin-bottom:1rem;font-weight:700;">Step 4 — Passport Photo</h5>
           <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">Upload a clear, recent passport-size photo. JPG or PNG only. Max 1MB.</p>
           <div class="upload-box" id="uploadBox">
-            <label class="upload-label">
-              <span class="upload-icon"><i class="fa-solid fa-camera"></i></span>
+            <label class="upload-label" for="passport_photo">
+              <span class="upload-icon" aria-hidden="true"><i class="fa-solid fa-camera"></i></span>
               <span style="color:#ccc;font-size:0.9rem;">Click to select your passport photo</span><br>
               <small style="color:rgba(255,255,255,0.4);">JPG / PNG — Max 1MB</small>
             </label>
           </div>
           <input type="file" name="passport_photo" id="passport_photo" accept="image/jpeg,image/png,image/jpg">
-          <img id="photoPreview" class="photo-preview hidden" src="" alt="Passport preview">
-          <p id="photoInfo" style="text-align:center;color:var(--text-muted);font-size:0.78rem;margin-top:0.5rem;"></p>
+          <img id="photoPreview" class="photo-preview<?= $photoPath ? '' : ' hidden' ?>" src="<?= $photoPath ? asset($photoPath) : '' ?>" alt="Passport preview">
+          <p id="photoInfo" style="text-align:center;color:var(--text-muted);font-size:0.78rem;margin-top:0.5rem;"><?= $photoPath ? 'A photo is already on file — select a new one only if you want to replace it.' : '' ?></p>
           <div class="step-nav-btns">
             <button type="button" class="btn-step btn-back" data-step="4"><i class="fa-solid fa-arrow-left"></i> Back</button>
             <button type="button" class="btn-step btn-next" data-step="4">Next <i class="fa-solid fa-arrow-right"></i></button>
@@ -542,7 +639,7 @@ $ghanaRegions = [
           <!-- Declaration -->
           <div class="agree-section" style="margin-top:1rem;">
             <label>
-              <input type="checkbox" name="declaration" id="declaration" required>
+              <input type="checkbox" name="declaration" id="declaration" <?= $declaration ? 'checked' : '' ?> required>
               &nbsp;I declare that the information provided above is true and correct to the best of my knowledge.
             </label>
           </div>
@@ -564,13 +661,17 @@ $ghanaRegions = [
   </p>
 </footer>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/uikit@3.21.0/dist/js/uikit.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.all.min.js"></script>
+<script src="<?= asset('assets/vendor/jquery/jquery-3.6.0.min.js') ?>"></script>
+<script src="<?= asset('assets/vendor/bootstrap/js/bootstrap.bundle.min.js') ?>"></script>
+<script src="<?= asset('assets/vendor/uikit/js/uikit.min.js') ?>"></script>
+<script src="<?= asset('assets/vendor/sweetalert2/sweetalert2.all.min.js') ?>"></script>
+<script src="<?= asset('assets/js/offline-db.js') ?>"></script>
+<script src="<?= asset('assets/js/sync-engine.js') ?>"></script>
 <script nonce="<?= generateCspNonce() ?>">
 let currentStep = 1;
 const totalSteps = 5;
+const firstErrorStep = <?= json_encode($errors[0]['step'] ?? null) ?>;
+const firstErrorField = <?= json_encode($errors[0]['field'] ?? null) ?>;
 
 function updateStepUI(step) {
   document.querySelectorAll('.form-step').forEach((el,i) => {
@@ -712,6 +813,11 @@ function previewPhoto(e) {
         document.getElementById('photoInfo').textContent =
           file.name + ' (Compressed: ' + (compressedFile.size / 1024).toFixed(1) + ' KB)';
         document.getElementById('uploadBox').style.borderColor = 'var(--success)';
+
+        // Compression is async — tell the autosave layer the file it reads
+        // from #passport_photo is now the final compressed Blob, rather than
+        // letting it race the debounce timer against this callback.
+        if (window.CDTI_onPhotoReady) window.CDTI_onPhotoReady();
       }, 'image/jpeg', 0.85);
     };
     img.src = ev.target.result;
@@ -746,7 +852,12 @@ document.querySelectorAll('.btn-next').forEach(function (btn) {
 document.querySelectorAll('.btn-back').forEach(function (btn) {
   btn.addEventListener('click', function () { prevStep(parseInt(this.dataset.step, 10)); });
 });
-document.getElementById('uploadBox').addEventListener('click', function () {
+document.getElementById('uploadBox').addEventListener('click', function (e) {
+  // The label now has for="passport_photo", so a click landing on the label
+  // itself already opens the picker natively — only proxy the click when it
+  // lands on the box's own padding (outside the label), so the full dashed
+  // area stays clickable without double-opening the file dialog.
+  if (e.target.closest('label')) return;
   document.getElementById('passport_photo').click();
 });
 document.getElementById('passport_photo').addEventListener('change', previewPhoto);
@@ -755,8 +866,31 @@ document.getElementById('passport_photo').addEventListener('change', previewPhot
   if (el) el.addEventListener('input', function () { formatGhPhone(this); });
 });
 
+// Jumps to the step containing the first error and focuses the specific
+// invalid field (or the error banner itself for a field-less error like a
+// stale CSRF token). Shared by the initial server-rendered-error case below
+// and by register-offline.js's client-side (fetch-based) submit handler, so
+// both paths land the student in exactly the same place.
+function focusFirstError(step, field) {
+  if (step) {
+    currentStep = step;
+    updateStepUI(currentStep);
+  }
+  const target = (field && document.getElementById(field)) || document.getElementById('formErrors');
+  if (target) {
+    target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    target.focus({ preventScroll: true });
+  }
+}
+window.CDTI_focusFirstError = focusFirstError;
+
 // Init
-updateStepUI(1);
+if (firstErrorStep) {
+  focusFirstError(firstErrorStep, firstErrorField);
+} else {
+  updateStepUI(1);
+}
 </script>
+<script src="<?= asset('assets/js/register-offline.js') ?>"></script>
 </body>
 </html>

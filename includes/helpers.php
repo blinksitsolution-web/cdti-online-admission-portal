@@ -52,7 +52,7 @@ function emitCspHeader(bool $allowPaystackInlineScript = false): void {
         . $scriptSrc
         . "style-src 'self' 'nonce-{$n}' https://fonts.googleapis.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com https://paystack.com 'unsafe-inline'; "
         . "img-src 'self' data: https://*.paystack.co; "
-        . "font-src https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
+        . "font-src 'self' https://fonts.gstatic.com https://cdnjs.cloudflare.com; "
         . "connect-src 'self' https://api.paystack.co https://standard.paystack.co https://*.pusher.com wss://*.pusher.com; "
         . "frame-src https://js.paystack.co https://checkout.paystack.com https://standard.paystack.co;"
     );
@@ -157,7 +157,7 @@ function validateIndexNumber(string $idx): bool {
     return preg_match('/^[A-Za-z0-9]{6,20}$/', $idx) === 1;
 }
 
-function validateEnrolmentCode(string $code): bool { return preg_match('/^\d{4,10}$/', $code) === 1; }
+function validateEnrolmentCode(string $code): bool { return preg_match('/^[A-Za-z0-9]{4,10}$/', $code) === 1; }
 function hashIndexNumber(string $idx): string { return substr($idx,0,4).'****'.substr($idx,8); }
 
 // ── CSRF ─────────────────────────────────────────────────────────────────────
