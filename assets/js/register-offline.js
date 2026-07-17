@@ -415,7 +415,10 @@ if ('serviceWorker' in navigator) {
       };
       return OfflineDB.saveDraft(indexNumber, snapshot).then(function () { return snapshot; });
     }).then(function (snapshot) {
-      if (!navigator.onLine) return queueOffline(snapshot);
+      // Always attempt a real submission first, even if navigator.onLine
+      // claims offline — that flag can get stuck reporting the wrong value
+      // after a real connectivity change, with no reload to reset it. Only
+      // an actual failed attempt falls back to the queue.
       return submitLive(snapshot).catch(function (err) {
         if (err && err.code === 'session_expired') {
           return Swal.fire({

@@ -176,7 +176,12 @@
   }
 
   function drainQueue() {
-    if (draining || !navigator.onLine) return Promise.resolve();
+    // Deliberately does not gate on navigator.onLine — it can get stuck
+    // reporting the wrong value after a real connectivity change with no
+    // page reload to reset it. Letting a real attempt fail naturally (see
+    // submitItem's catch, which schedules a retry) is what actually recovers
+    // from that, instead of silently never trying again.
+    if (draining) return Promise.resolve();
     draining = true;
     return OfflineDB.getSyncableSubmissions().then(function (items) {
       return items.reduce(function (chain, item) {
