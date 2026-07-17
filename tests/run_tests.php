@@ -52,9 +52,10 @@ test('index: accepts 11-digit',   validateIndexNumber('41700600925'));
 test('index: accepts 12-digit',   validateIndexNumber('417006009251'));
 test('index: rejects 3-digit',    !validateIndexNumber('123'));
 test('index: rejects symbols',    !validateIndexNumber('417-006-009'));
-test('enrolment: accepts 5-digit',validateEnrolmentCode('12345'));
-test('enrolment: rejects alpha',  !validateEnrolmentCode('abc12'));
-test('enrolment: rejects short',  !validateEnrolmentCode('12'));
+test('enrolment: accepts 5-digit',    validateEnrolmentCode('12345'));
+test('enrolment: accepts alphanumeric',validateEnrolmentCode('WEC008'));
+test('enrolment: rejects short',      !validateEnrolmentCode('12'));
+test('enrolment: rejects symbols',    !validateEnrolmentCode('abc-12'));
 
 // ── 3. CSRF ──────────────────────────────────────────────────────
 section('CSRF Token');

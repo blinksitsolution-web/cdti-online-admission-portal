@@ -157,7 +157,7 @@ function validateIndexNumber(string $idx): bool {
     return preg_match('/^[A-Za-z0-9]{6,20}$/', $idx) === 1;
 }
 
-function validateEnrolmentCode(string $code): bool { return preg_match('/^\d{4,10}$/', $code) === 1; }
+function validateEnrolmentCode(string $code): bool { return preg_match('/^[A-Za-z0-9]{4,10}$/', $code) === 1; }
 function hashIndexNumber(string $idx): string { return substr($idx,0,4).'****'.substr($idx,8); }
 
 // ── CSRF ─────────────────────────────────────────────────────────────────────

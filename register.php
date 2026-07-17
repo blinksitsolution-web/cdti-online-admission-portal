@@ -149,7 +149,7 @@ if ($isPost) {
         if (empty($enrol_code)) {
             $errors[] = ['field' => 'enrolment_code', 'step' => 2, 'msg' => 'Enrolment code is required.'];
         } elseif (!validateEnrolmentCode($enrol_code)) {
-            $errors[] = ['field' => 'enrolment_code', 'step' => 2, 'msg' => 'Enrolment code must be 4–10 digits.'];
+            $errors[] = ['field' => 'enrolment_code', 'step' => 2, 'msg' => 'Enrolment code must be 4–10 letters and/or numbers.'];
         }
         if (empty($aggregate)) {
             $errors[] = ['field' => 'aggregate', 'step' => 2, 'msg' => 'BECE aggregate is required.'];
