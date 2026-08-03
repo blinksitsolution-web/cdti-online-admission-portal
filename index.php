@@ -397,7 +397,7 @@ $programmes = [
             <li>Ensure you have your printed <strong>CSSPS Placement Form</strong> available.</li>
             <li>Your <strong>Enrolment Code</strong> is printed on your placement form — it is required.</li>
             <li>Admission is <strong>INCOMPLETE</strong> without your Enrolment Code.</li>
-            <li>Admission processing fee must be paid <strong>before</strong> registration form is shown.</li>
+            <li>Admission processing fee must be paid.</li>
           </ul>
         </div>
       </div>
@@ -406,11 +406,11 @@ $programmes = [
           <h3><i class="fa-solid fa-file-import"></i> Documents to Bring on Reporting Day</h3>
           <ul style="padding-left:1.25rem;">
             <li>Placement form (1 original + 1 photocopy)</li>
-            <li>Admission Letter (2 printed copies)</li>
-            <li>Personal Record Form (printed &amp; signed)</li>
+            <li>Admission Letter (1 printed copy)</li>
+            <li>Personal Record Form (1 signed printed copy)</li>
             <li>Bond Form (signed by parent/guardian)</li>
-            <li>Birth Certificate / Ghana Card</li>
-            <li>4 passport-size photographs</li>
+            <li>1 copy of Birth Certificate &amp; NHIS Card</li>
+            <li>2 passport-size photographs</li>
           </ul>
         </div>
       </div>
