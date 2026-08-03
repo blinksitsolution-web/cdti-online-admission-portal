@@ -35,6 +35,11 @@ Built for **Charlotte Dolphyne Technical Institute (CDTI)**, deployed on Hosting
 
 ## Entity-Relationship Diagram
 
+![Entity-Relationship Diagram](docs/erd.svg)
+
+<details>
+<summary>Diagram source (mermaid)</summary>
+
 ```mermaid
 erDiagram
     HOUSES ||--o{ STUDENTS : "assigned to"
@@ -118,6 +123,8 @@ erDiagram
         text message
     }
 ```
+
+</details>
 
 Enum value sets: `students.residency` is `Boarder`/`Day`; `students.registration_status` is `not_started`/`in_progress`/`completed`; `students.payment_status` is `pending`/`paid`/`waived`; `houses.gender` and `students.gender` are `Male`/`Female`; `admins.role` is `superadmin`/`staff`; `audit_logs.actor_type` is `student`/`admin`/`system`; `sms_queue.status` is `pending`/`sent`/`failed`.
 
