@@ -126,13 +126,14 @@ $letterheadSrc = !empty($s['letterhead_header_path'])     ? fileToDataUri($s['le
   <table class="info-table">
     <tr><th style="width:22%;">Full Name</th><td colspan="3"><strong><?= htmlspecialchars($student['full_name']) ?></strong></td></tr>
     <tr>
+      <th>Admission No.</th><td style="font-family:monospace;font-weight:bold;color:#003366;"><?= htmlspecialchars($student['admission_number'] ?? '—') ?></td>
       <th>Index Number</th><td style="font-family:monospace;"><?= htmlspecialchars($student['index_number']) ?></td>
-      <th>Gender</th><td><?= htmlspecialchars($student['gender']) ?></td>
     </tr>
     <tr>
       <th>Date of Birth</th><td><?= $student['date_of_birth'] ? date('jS F, Y', strtotime($student['date_of_birth'])) : '—' ?></td>
-      <th>Religion</th><td><?= htmlspecialchars($student['religion'] ?? '—') ?></td>
+      <th>Gender</th><td><?= htmlspecialchars($student['gender']) ?></td>
     </tr>
+
     <tr>
       <th>Hometown</th><td><?= htmlspecialchars($student['hometown'] ?? '—') ?></td>
       <th>Region</th><td><?= htmlspecialchars($student['region'] ?? '—') ?></td>

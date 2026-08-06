@@ -325,10 +325,6 @@ if ('serviceWorker' in navigator) {
         window.location.href = baseUrl + '/dashboard';
       });
     }
-    if (data.status === 'conflict' && data.reason === 'house_unavailable') {
-      renderErrors([{ field: 'house_id', step: 2, msg: data.message || 'The selected house is no longer available.' }]);
-      return;
-    }
     if (data.status === 'conflict' && data.reason === 'already_registered') {
       return OfflineDB.deleteDraft(indexNumber).then(function () {
         return Swal.fire({

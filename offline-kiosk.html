@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline Registration — CDTI</title>
+<meta name="description" content="Offline student registration kiosk for CDTI Admission Portal.">
+<meta name="robots" content="noindex"><!-- Kiosk page should not appear in search engines -->
+<link rel="stylesheet" href="/assets/css/main.css">
+<link rel="stylesheet" href="/assets/vendor/fontawesome/css/all.min.css">
+<style>
+/* ── Kiosk-specific overrides ─────────────────────────────────────────── */
+.k-screen { display: none; }
+.k-screen.active { display: block; }
+
+.k-card {
+  max-width: 600px;
+  margin: 2rem auto;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 18px;
+  padding: 2rem 1.75rem;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.35);
+}
+
+.k-logo-bar {
+  text-align: center;
+  margin-bottom: 1.75rem;
+}
+.k-logo-bar img {
+  width: 64px;
+  height: 64px;
+  object-fit: contain;
+  border-radius: 12px;
+  display: none;
+  margin: 0 auto 0.6rem;
+}
+.k-logo-bar h1 {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #fff;
+  margin: 0;
+  line-height: 1.3;
+}
+.k-logo-bar .k-subtitle {
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.5);
+  margin-top: 0.25rem;
+}
+
+.k-offline-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: rgba(0,111,160,0.2);
+  border: 1px solid rgba(0,180,255,0.3);
+  border-radius: 20px;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.78rem;
+  color: #4dd8ff;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 1.25rem;
+}
+
+.k-input {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-size: 1rem;
+  color: #fff;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+.k-input:focus { border-color: rgba(0,180,255,0.6); background: rgba(255,255,255,0.1); }
+.k-input::placeholder { color: rgba(255,255,255,0.3); }
+
+.k-select {
+  width: 100%;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid rgba(255,255,255,0.15);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  font-size: 0.9rem;
+  color: #fff;
+  outline: none;
+  appearance: none;
+  box-sizing: border-box;
+}
+.k-select option { background: #0f1e2d; color: #fff; }
+
+.k-label {
+  display: block;
+  font-size: 0.82rem;
+  color: rgba(255,255,255,0.6);
+  margin-bottom: 0.4rem;
+  font-weight: 600;
+}
+
+.k-field { margin-bottom: 1.1rem; }
+
+.k-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: #006fa0;
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 0.75rem 1.5rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.1s;
+  width: 100%;
+  justify-content: center;
+  margin-top: 0.5rem;
+}
+.k-btn:hover:not(:disabled) { background: #0086c3; transform: translateY(-1px); }
+.k-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.k-btn.sec {
+  background: transparent;
+  border: 1px solid rgba(255,255,255,0.2);
+  color: rgba(255,255,255,0.6);
+  margin-top: 0.5rem;
+}
+.k-btn.sec:hover { background: rgba(255,255,255,0.06); }
+
+.k-error {
+  display: none;
+  background: rgba(220,60,60,0.12);
+  border: 1px solid rgba(220,60,60,0.35);
+  border-radius: 9px;
+  padding: 0.65rem 0.9rem;
+  color: #ff8080;
+  font-size: 0.85rem;
+  margin-bottom: 0.75rem;
+}
+
+.k-info-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.55rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+  font-size: 0.87rem;
+}
+.k-info-row .k-lbl { color: rgba(255,255,255,0.45); }
+.k-info-row .k-val { color: #fff; font-weight: 600; text-align: right; }
+
+.k-student-found {
+  background: rgba(0,111,160,0.12);
+  border: 1px solid rgba(0,180,255,0.25);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin-bottom: 1.25rem;
+  text-align: center;
+}
+.k-student-found .k-sname {
+  font-size: 1.35rem;
+  font-weight: 800;
+  color: #fff;
+  letter-spacing: 0.5px;
+  font-family: monospace;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+/* Step progress */
+.k-steps-bar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 1.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+.k-step-dot {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+  border: 2px solid rgba(255,255,255,0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: rgba(255,255,255,0.4);
+  flex-shrink: 0;
+  transition: all 0.2s;
+}
+.k-step-dot.active {
+  background: #006fa0;
+  border-color: #4dd8ff;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(0,111,160,0.5);
+}
+.k-step-dot.done {
+  background: rgba(45,198,83,0.2);
+  border-color: #2dc653;
+  color: #2dc653;
+}
+.k-step-line {
+  flex: 1;
+  height: 2px;
+  background: rgba(255,255,255,0.1);
+  min-width: 16px;
+}
+.k-step-labels {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 1.25rem;
+  font-size: 0.7rem;
+  color: rgba(255,255,255,0.35);
+}
+
+.k-step { display: none; }
+.k-step.active { display: block; }
+.k-step-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #4dd8ff;
+  margin-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.k-nav-btns {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+.k-nav-btns .k-btn { margin-top: 0; }
+
+.k-student-badge {
+  background: rgba(0,111,160,0.15);
+  border: 1px solid rgba(0,180,255,0.2);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.85rem;
+}
+.k-student-badge strong { color: #4dd8ff; }
+
+.k-photo-area {
+  text-align: center;
+  border: 2px dashed rgba(255,255,255,0.15);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.k-photo-area:hover { border-color: rgba(0,180,255,0.4); }
+.k-photo-area img { width: 120px; height: 150px; object-fit: cover; border-radius: 8px; display: none; margin: 0 auto 0.5rem; }
+
+.k-review-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.85rem;
+}
+.k-review-row .k-rl { color: rgba(255,255,255,0.45); }
+.k-review-row .k-rv { color: #fff; font-weight: 600; text-align: right; }
+
+.k-declaration {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  background: rgba(0,111,160,0.1);
+  border: 1px solid rgba(0,180,255,0.2);
+  border-radius: 10px;
+  padding: 0.85rem 1rem;
+  margin: 1rem 0;
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.75);
+  line-height: 1.5;
+  cursor: pointer;
+}
+.k-declaration input { margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+
+/* Success screen */
+.k-success-icon { font-size: 4rem; text-align: center; margin-bottom: 1rem; }
+.k-success-card { text-align: center; }
+.k-admission-num {
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: #4dd8ff;
+  font-family: monospace;
+  letter-spacing: 2px;
+  background: rgba(0,111,160,0.15);
+  border: 1px solid rgba(0,180,255,0.3);
+  border-radius: 10px;
+  padding: 0.6rem 1.25rem;
+  display: none;
+  margin: 0.5rem auto;
+}
+.k-queued-banner {
+  display: none;
+  background: rgba(255,165,0,0.12);
+  border: 1px solid rgba(255,165,0,0.3);
+  border-radius: 10px;
+  padding: 0.75rem 1rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  color: rgba(255,255,255,0.8);
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+/* Network pill */
+#kNetworkPill {
+  position: fixed;
+  top: 0.75rem;
+  right: 0.75rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  border: 1px solid transparent;
+  z-index: 999;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+.row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+@media (max-width: 480px) { .row-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body style="background:#0a1622;min-height:100vh;color:#fff;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+
+<!-- Network indicator -->
+<div id="kNetworkPill">📶 Online</div>
+
+<div style="max-width:640px;margin:0 auto;padding:1rem;">
+
+  <!-- ══ WELCOME SCREEN ═══════════════════════════════════════════════ -->
+  <div class="k-screen active" data-screen="welcome">
+    <div class="k-card">
+      <div class="k-logo-bar">
+        <img src="/assets/img/logo.png" alt="School Logo" id="kSchoolLogo">
+        <h1 id="kSchoolName">CDTI Admission Portal</h1>
+        <p class="k-subtitle">Academic Year <span id="kAcademicYear"></span></p>
+      </div>
+
+      <div style="text-align:center;margin-bottom:1.5rem;">
+        <span class="k-offline-badge">
+          <i class="fa-solid fa-wifi-slash"></i> Offline Kiosk Mode
+        </span>
+        <p style="color:rgba(255,255,255,0.55);font-size:0.85rem;line-height:1.6;margin:0;">
+          Enter your CSSPS index number to begin your registration.
+          Your data will be saved on this device and submitted automatically when internet is available.
+        </p>
+      </div>
+
+      <div id="kWelcomeError" class="k-error"></div>
+
+      <form id="kWelcomeForm" autocomplete="off">
+        <div class="k-field">
+          <label class="k-label" for="kIndexInput">
+            <i class="fa-solid fa-id-card"></i> CSSPS Index Number
+          </label>
+          <input
+            id="kIndexInput"
+            class="k-input"
+            type="text"
+            inputmode="numeric"
+            placeholder="e.g. 41700600925"
+            maxlength="20"
+            required
+            autocomplete="off"
+            style="text-align:center;font-size:1.25rem;font-family:monospace;letter-spacing:2px;">
+        </div>
+        <button type="submit" class="k-btn" id="kWelcomeBtn">
+          <i class="fa-solid fa-magnifying-glass"></i> Find My Record →
+        </button>
+      </form>
+
+      <div style="margin-top:1.5rem;padding-top:1rem;border-top:1px solid rgba(255,255,255,0.07);text-align:center;">
+        <p style="font-size:0.78rem;color:rgba(255,255,255,0.3);margin:0;">
+          <i class="fa-solid fa-shield-halved"></i>
+          Your data is stored only on this device until internet is available
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ VERIFY SCREEN ════════════════════════════════════════════════ -->
+  <div class="k-screen" data-screen="verify">
+    <div class="k-card">
+      <h2 style="font-size:1.1rem;font-weight:800;color:#4dd8ff;margin-bottom:1.25rem;">
+        <i class="fa-solid fa-user-check"></i> Is this your record?
+      </h2>
+      <p style="font-size:0.85rem;color:rgba(255,255,255,0.55);margin-bottom:1rem;">
+        Compare the details below with your CSSPS placement form before proceeding.
+      </p>
+
+      <div class="k-student-found">
+        <span class="k-sname" id="kMaskedName">—</span>
+        <div style="font-size:0.82rem;color:rgba(255,255,255,0.55);margin-top:0.25rem;">
+          (Name partially hidden for privacy)
+        </div>
+      </div>
+
+      <div class="k-info-row">
+        <span class="k-lbl">Programme</span>
+        <span class="k-val" id="kStudentProg">—</span>
+      </div>
+      <div class="k-info-row">
+        <span class="k-lbl">Residency</span>
+        <span class="k-val" id="kStudentRes">—</span>
+      </div>
+
+      <div class="k-nav-btns" style="margin-top:1.5rem;">
+        <button type="button" class="k-btn" id="kVerifyYes">
+          <i class="fa-solid fa-check"></i> Yes, that's me
+        </button>
+        <button type="button" class="k-btn sec" id="kVerifyNo">
+          <i class="fa-solid fa-xmark"></i> No, go back
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ FORM SCREEN ══════════════════════════════════════════════════ -->
+  <div class="k-screen" data-screen="form">
+    <div class="k-card">
+
+      <!-- Step progress bar -->
+      <div class="k-steps-bar">
+        <div class="k-step-dot active" data-step-dot="1">1</div>
+        <div class="k-step-line"></div>
+        <div class="k-step-dot" data-step-dot="2">2</div>
+        <div class="k-step-line"></div>
+        <div class="k-step-dot" data-step-dot="3">3</div>
+        <div class="k-step-line"></div>
+        <div class="k-step-dot" data-step-dot="4">4</div>
+        <div class="k-step-line"></div>
+        <div class="k-step-dot" data-step-dot="5">5</div>
+      </div>
+      <div class="k-step-labels">
+        <span>Bio-Data</span><span>Placement</span><span>Family</span><span>Photo</span><span>Review</span>
+      </div>
+
+      <!-- Student badge (always visible) -->
+      <div class="k-student-badge">
+        <strong id="kFormStudentName">—</strong> &nbsp;|&nbsp;
+        Idx: <span id="kFormStudentIdx" style="font-family:monospace;">—</span> &nbsp;|&nbsp;
+        <span id="kFormStudentProg">—</span> &nbsp;|&nbsp; <span id="kFormStudentRes">—</span>
+      </div>
+
+      <div id="kStepError" class="k-error"></div>
+
+      <form id="kRegForm" autocomplete="off">
+
+        <!-- ── STEP 1: Bio-Data ─────────────────────────────────────── -->
+        <div class="k-step active" data-step="1">
+          <div class="k-step-title"><i class="fa-solid fa-user"></i> Step 1 — Bio-Data</div>
+
+          <div class="k-field">
+            <label class="k-label" for="dob">Date of Birth <span style="color:#ff6b6b;">*</span></label>
+            <input id="dob" name="dob" type="date" class="k-input" required>
+          </div>
+
+          <div class="k-field">
+            <label class="k-label" for="religion">Religion <span style="color:#ff6b6b;">*</span></label>
+            <select id="religion" name="religion" class="k-select" required>
+              <option value="">— Select Religion —</option>
+              <option>Christianity</option>
+              <option>Islam</option>
+              <option>Traditional</option>
+              <option>Other</option>
+            </select>
+          </div>
+
+          <div class="row-2">
+            <div class="k-field">
+              <label class="k-label" for="hometown">Hometown <span style="color:#ff6b6b;">*</span></label>
+              <input id="hometown" name="hometown" type="text" class="k-input" placeholder="e.g. Accra" required>
+            </div>
+            <div class="k-field">
+              <label class="k-label" for="nationality">Nationality</label>
+              <input id="nationality" name="nationality" type="text" class="k-input" value="Ghanaian">
+            </div>
+          </div>
+
+          <div class="k-field">
+            <label class="k-label" for="region">Region <span style="color:#ff6b6b;">*</span></label>
+            <select id="region" name="region" class="k-select" required>
+              <option value="">— Select Region —</option>
+              <option>Greater Accra</option><option>Ashanti</option><option>Western</option>
+              <option>Eastern</option><option>Central</option><option>Volta</option>
+              <option>Northern</option><option>Upper East</option><option>Upper West</option>
+              <option>Brong-Ahafo</option><option>Bono East</option><option>Ahafo</option>
+              <option>Western North</option><option>Oti</option><option>Savannah</option>
+              <option>North East</option>
+            </select>
+          </div>
+
+          <div class="k-field">
+            <label class="k-label" for="prev_jhs">Previous JHS Attended <span style="color:#ff6b6b;">*</span></label>
+            <input id="prev_jhs" name="prev_jhs" type="text" class="k-input" placeholder="School name" required>
+          </div>
+
+          <div class="k-field">
+            <label class="k-label" for="prev_jhs_index">BECE Index Number</label>
+            <input id="prev_jhs_index" name="prev_jhs_index" type="text" class="k-input" placeholder="Your JHS index number">
+          </div>
+
+          <div class="k-nav-btns">
+            <button type="button" class="k-btn" data-next-step="2">
+              Next <i class="fa-solid fa-arrow-right"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- ── STEP 2: Placement ────────────────────────────────────── -->
+        <div class="k-step" data-step="2">
+          <div class="k-step-title"><i class="fa-solid fa-graduation-cap"></i> Step 2 — Placement Details</div>
+
+          <div class="k-field">
+            <label class="k-label" for="enrolment_code">Enrolment Code (from Placement Form) <span style="color:#ff6b6b;">*</span></label>
+            <input id="enrolment_code" name="enrolment_code" type="text" class="k-input"
+              placeholder="Your enrolment code" maxlength="20" required>
+          </div>
+
+          <div class="k-field">
+            <label class="k-label" for="aggregate">BECE Aggregate <span style="color:#ff6b6b;">*</span></label>
+            <input id="aggregate" name="aggregate" type="number" class="k-input"
+              placeholder="e.g. 12" min="6" max="54" required>
+          </div>
+
+          <div id="kBoarderSection" style="display:none;">
+            <div style="background:rgba(0,111,160,0.1);border:1px solid rgba(0,180,255,0.2);border-radius:10px;padding:0.85rem;margin-bottom:1rem;font-size:0.85rem;color:rgba(255,255,255,0.7);">
+              <i class="fa-solid fa-house"></i>
+              <strong style="color:#4dd8ff;">Boarding Student:</strong>
+              A house will be automatically assigned to you when your registration is processed.
+            </div>
+          </div>
+
+          <div class="k-nav-btns">
+            <button type="button" class="k-btn sec" data-prev-step="1"><i class="fa-solid fa-arrow-left"></i> Back</button>
+            <button type="button" class="k-btn" data-next-step="3">Next <i class="fa-solid fa-arrow-right"></i></button>
+          </div>
+        </div>
+
+        <!-- ── STEP 3: Family Info ──────────────────────────────────── -->
+        <div class="k-step" data-step="3">
+          <div class="k-step-title"><i class="fa-solid fa-people-roof"></i> Step 3 — Family / Guardian Info</div>
+
+          <p style="font-size:0.82rem;color:rgba(255,255,255,0.5);margin-bottom:1rem;">All fields are optional but at least one contact is recommended.</p>
+
+          <div style="font-size:0.85rem;font-weight:700;color:rgba(255,255,255,0.6);margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.5px;">Father</div>
+          <div class="row-2">
+            <div class="k-field">
+              <label class="k-label" for="father_name">Full Name</label>
+              <input id="father_name" name="father_name" type="text" class="k-input" placeholder="Father's name">
+            </div>
+            <div class="k-field">
+              <label class="k-label" for="father_phone">Phone Number</label>
+              <input id="father_phone" name="father_phone" type="tel" class="k-input" placeholder="024...">
+            </div>
+          </div>
+          <div class="k-field">
+            <label class="k-label" for="father_occupation">Occupation</label>
+            <input id="father_occupation" name="father_occupation" type="text" class="k-input" placeholder="Occupation">
+          </div>
+
+          <div style="font-size:0.85rem;font-weight:700;color:rgba(255,255,255,0.6);margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:0.5rem;">Mother</div>
+          <div class="row-2">
+            <div class="k-field">
+              <label class="k-label" for="mother_name">Full Name</label>
+              <input id="mother_name" name="mother_name" type="text" class="k-input" placeholder="Mother's name">
+            </div>
+            <div class="k-field">
+              <label class="k-label" for="mother_phone">Phone Number</label>
+              <input id="mother_phone" name="mother_phone" type="tel" class="k-input" placeholder="024...">
+            </div>
+          </div>
+          <div class="k-field">
+            <label class="k-label" for="mother_occupation">Occupation</label>
+            <input id="mother_occupation" name="mother_occupation" type="text" class="k-input" placeholder="Occupation">
+          </div>
+
+          <div style="font-size:0.85rem;font-weight:700;color:rgba(255,255,255,0.6);margin-bottom:0.6rem;text-transform:uppercase;letter-spacing:0.5px;margin-top:0.5rem;">Guardian (if different)</div>
+          <div class="row-2">
+            <div class="k-field">
+              <label class="k-label" for="guardian_name">Full Name</label>
+              <input id="guardian_name" name="guardian_name" type="text" class="k-input" placeholder="Guardian's name">
+            </div>
+            <div class="k-field">
+              <label class="k-label" for="guardian_phone">Phone Number</label>
+              <input id="guardian_phone" name="guardian_phone" type="tel" class="k-input" placeholder="024...">
+            </div>
+          </div>
+          <div class="row-2">
+            <div class="k-field">
+              <label class="k-label" for="guardian_address">Address</label>
+              <input id="guardian_address" name="guardian_address" type="text" class="k-input" placeholder="Guardian address">
+            </div>
+            <div class="k-field">
+              <label class="k-label" for="guardian_relationship">Relationship</label>
+              <select id="guardian_relationship" name="guardian_relationship" class="k-select">
+                <option value="">— Select —</option>
+                <option>Uncle</option><option>Aunt</option><option>Grandparent</option>
+                <option>Sibling</option><option>Family Friend</option><option>Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="k-nav-btns">
+            <button type="button" class="k-btn sec" data-prev-step="2"><i class="fa-solid fa-arrow-left"></i> Back</button>
+            <button type="button" class="k-btn" data-next-step="4">Next <i class="fa-solid fa-arrow-right"></i></button>
+          </div>
+        </div>
+
+        <!-- ── STEP 4: Passport Photo ───────────────────────────────── -->
+        <div class="k-step" data-step="4">
+          <div class="k-step-title"><i class="fa-solid fa-camera"></i> Step 4 — Passport Photo</div>
+
+          <p style="font-size:0.85rem;color:rgba(255,255,255,0.55);margin-bottom:1rem;">
+            Upload a clear, recent passport-size photo. JPG or PNG, max 5MB.
+            If no camera is available, you may skip — the admin can add it later.
+          </p>
+
+          <div class="k-photo-area" onclick="document.getElementById('passport_photo').click();">
+            <img id="kPhotoPreview" src="" alt="Photo Preview">
+            <div id="kPhotoPlaceholder">
+              <i class="fa-solid fa-camera" style="font-size:2rem;color:rgba(255,255,255,0.2);display:block;margin-bottom:0.5rem;"></i>
+              <span style="font-size:0.85rem;color:rgba(255,255,255,0.35);">Tap to select photo</span>
+            </div>
+          </div>
+          <input id="passport_photo" name="passport_photo" type="file" accept="image/jpeg,image/png,image/jpg" style="display:none;">
+          <p id="kPhotoInfo" style="font-size:0.78rem;color:rgba(255,255,255,0.4);text-align:center;margin:0.25rem 0 1rem;"></p>
+
+          <div class="k-nav-btns">
+            <button type="button" class="k-btn sec" data-prev-step="3"><i class="fa-solid fa-arrow-left"></i> Back</button>
+            <button type="button" class="k-btn" data-next-step="5">Review <i class="fa-solid fa-eye"></i></button>
+          </div>
+        </div>
+
+        <!-- ── STEP 5: Review & Submit ──────────────────────────────── -->
+        <div class="k-step" data-step="5">
+          <div class="k-step-title"><i class="fa-solid fa-clipboard-check"></i> Step 5 — Review & Submit</div>
+
+          <div style="margin-bottom:1.25rem;">
+            <div class="k-review-row"><span class="k-rl">Full Name</span><span class="k-rv" id="kFormStudentName2">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Index Number</span><span class="k-rv" id="kFormStudentIdx2" style="font-family:monospace;">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Programme</span><span class="k-rv" id="kFormStudentProg2">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Residency</span><span class="k-rv" id="kFormStudentRes2">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Date of Birth</span><span class="k-rv" id="rv_dob">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Religion</span><span class="k-rv" id="rv_religion">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Hometown</span><span class="k-rv" id="rv_hometown">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Region</span><span class="k-rv" id="rv_region">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Previous JHS</span><span class="k-rv" id="rv_jhs">—</span></div>
+            <div class="k-review-row"><span class="k-rl">BECE Aggregate</span><span class="k-rv" id="rv_agg">—</span></div>
+            <div class="k-review-row"><span class="k-rl">Enrolment Code</span><span class="k-rv" id="rv_code">—</span></div>
+            <div class="k-review-row" style="border:none;">
+              <span class="k-rl">Passport Photo</span>
+              <span class="k-rv">
+                <img id="rv_photo" src="" alt="" style="width:50px;height:65px;object-fit:cover;border-radius:5px;display:none;">
+                <span id="rv_no_photo" style="color:rgba(255,255,255,0.35);">None uploaded</span>
+              </span>
+            </div>
+          </div>
+
+          <label class="k-declaration">
+            <input type="checkbox" id="kDeclaration" name="declaration">
+            <span>I declare that all information provided above is true and correct to the best of my knowledge.</span>
+          </label>
+
+          <p id="kSubmitStatus" style="display:none;font-size:0.85rem;text-align:center;margin:0.5rem 0;"></p>
+
+          <button type="button" class="k-btn" id="kSubmitBtn" style="background:linear-gradient(135deg,#006fa0,#004d70);">
+            <i class="fa-solid fa-circle-check"></i> Submit Registration
+          </button>
+
+          <div class="k-nav-btns" style="margin-top:0.5rem;">
+            <button type="button" class="k-btn sec" data-prev-step="4"><i class="fa-solid fa-arrow-left"></i> Back</button>
+          </div>
+        </div>
+
+      </form><!-- /kRegForm -->
+    </div>
+  </div>
+
+  <!-- ══ SUCCESS SCREEN ═══════════════════════════════════════════════ -->
+  <div class="k-screen" data-screen="success">
+    <div class="k-card k-success-card">
+      <div class="k-success-icon">🎉</div>
+      <h2 style="font-size:1.5rem;font-weight:900;color:#fff;margin-bottom:0.5rem;">Registration Complete!</h2>
+      <p id="kSuccessName" style="font-size:1rem;color:#4dd8ff;font-weight:700;margin-bottom:1.25rem;"></p>
+
+      <div id="kAdmissionLabel" style="display:none;font-size:0.82rem;color:rgba(255,255,255,0.5);margin-bottom:0.25rem;text-transform:uppercase;letter-spacing:1px;">
+        Your Admission Number
+      </div>
+      <div class="k-admission-num" id="kAdmissionNumber"></div>
+
+      <div class="k-queued-banner" id="kQueuedBanner">
+        <span style="font-size:1.2rem;">⏳</span>
+        <span>
+          <strong style="color:#fff;display:block;">Saved on this device</strong>
+          Your registration will be submitted automatically when internet is available. No action needed.
+        </span>
+      </div>
+
+      <div id="kHouseMsg" style="display:none;margin-top:1rem;background:rgba(0,111,160,0.1);border:1px solid rgba(0,180,255,0.2);border-radius:10px;padding:0.85rem;font-size:0.85rem;color:rgba(255,255,255,0.7);">
+        <i class="fa-solid fa-house"></i>
+        <strong style="color:#4dd8ff;">House Assignment:</strong>
+        Your house will be assigned automatically when the registration syncs to the server.
+      </div>
+
+      <!-- Synced admission banner (shown by JS after background sync) -->
+      <div class="k-synced-banner" style="display:none;margin-top:1rem;background:rgba(45,198,83,0.1);border:1px solid rgba(45,198,83,0.3);border-radius:10px;padding:0.85rem;font-size:0.85rem;color:rgba(255,255,255,0.7);">
+        <i class="fa-solid fa-cloud-arrow-up" style="color:#2dc653;"></i>
+        <strong style="color:#2dc653;">Synced!</strong> Admission Number: <strong id="kSyncedAdmission" style="color:#4dd8ff;font-family:monospace;"></strong>
+      </div>
+
+      <div style="margin-top:2rem;">
+        <button type="button" class="k-btn" onclick="window.location.reload();">
+          <i class="fa-solid fa-rotate-right"></i> Register Another Student
+        </button>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /container -->
+
+<!-- JS — kiosk-db must load before kiosk-app -->
+<script src="/assets/js/kiosk-db.js"></script>
+<script src="/assets/js/kiosk-app.js"></script>
+
+<!-- Wire up review screen student info (simple DOM copy, no JS module needed) -->
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  // Sync student info into the review step when it becomes visible
+  document.addEventListener('click', function(e) {
+    if (e.target.matches('[data-next-step="5"]') || e.target.matches('[data-step="5"]')) {
+      // Copy name/idx/prog/res into review panel
+      ['Name','Idx','Prog','Res'].forEach(function(k) {
+        var src = document.getElementById('kFormStudent' + k);
+        var dst = document.getElementById('kFormStudent' + k + '2');
+        if (src && dst) dst.textContent = src.textContent;
+      });
+      // Photo
+      var preview = document.getElementById('kPhotoPreview');
+      var rvPhoto = document.getElementById('rv_photo');
+      var rvNone  = document.getElementById('rv_no_photo');
+      if (preview && preview.src && !preview.src.endsWith('/offline-kiosk.html')) {
+        if (rvPhoto) { rvPhoto.src = preview.src; rvPhoto.style.display = 'block'; }
+        if (rvNone) rvNone.style.display = 'none';
+      }
+    }
+  });
+});
+</script>
+
+</body>
+</html>

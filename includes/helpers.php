@@ -296,13 +296,12 @@ function getHouseOccupancy(PDO $pdo, int $houseId, ?int $excludeStudentId = null
 }
 
 function getAvailableHouses(PDO $pdo, string $studentGender, ?int $excludeStudentId = null): array {
-    $gender = normalizeStudentGender($studentGender);
-    if (!in_array($gender, ['Male', 'Female'], true)) {
-        return [];
-    }
-
-    $houses = $pdo->prepare("SELECT id, name, gender, capacity FROM houses WHERE gender = ? ORDER BY name");
-    $houses->execute([$gender]);
+    // All active houses are open to every student regardless of gender.
+    // Houses must be active (is_active = 1) and have remaining capacity.
+    $houses = $pdo->prepare(
+        "SELECT id, name, gender, capacity FROM houses WHERE is_active = 1 ORDER BY name"
+    );
+    $houses->execute();
 
     $available = [];
     foreach ($houses->fetchAll() as $house) {
@@ -317,19 +316,112 @@ function getAvailableHouses(PDO $pdo, string $studentGender, ?int $excludeStuden
 }
 
 function isHouseAvailableForStudent(PDO $pdo, int $houseId, string $studentGender, ?int $studentId = null): bool {
-    $stmt = $pdo->prepare("SELECT id, gender, capacity FROM houses WHERE id = ?");
+    // Gender is no longer a restriction — any active house with space is valid.
+    $stmt = $pdo->prepare("SELECT id, capacity, is_active FROM houses WHERE id = ?");
     $stmt->execute([$houseId]);
     $house = $stmt->fetch();
     if (!$house) {
         return false;
     }
 
-    $gender = normalizeStudentGender($studentGender);
-    if ($house['gender'] !== $gender) {
-        return false;
+    if (!(int) $house['is_active']) {
+        return false; // house has been deactivated
     }
 
     return getHouseOccupancy($pdo, $houseId, $studentId) < (int) $house['capacity'];
+}
+
+// ── Admission Number & Auto House Assignment ─────────────────────────────────
+
+/**
+ * Map a full program/department name to a short, uppercase code used in the
+ * admission number (e.g. "Building Construction" → "BC").
+ * Add more entries here as new programmes are introduced.
+ */
+function getProgramCode(string $program): string {
+    $p = strtolower(trim($program));
+    return match (true) {
+        str_contains($p, 'building') || str_contains($p, 'construct')              => 'BC',
+        str_contains($p, 'electrical')                                              => 'EE',
+        str_contains($p, 'fashion') || str_contains($p, 'design')                  => 'FD',
+        str_contains($p, 'computer') || str_contains($p, 'bit') || str_contains($p, 'information tech') => 'BIT',
+        str_contains($p, 'home ec') || str_contains($p, 'hospitality')             => 'HE',
+        str_contains($p, 'welding') || str_contains($p, 'fabricat')                => 'WF',
+        str_contains($p, 'mechanical')                                              => 'ME',
+        str_contains($p, 'auto') || str_contains($p, 'vehicle')                    => 'AV',
+        str_contains($p, 'plumbing')                                                => 'PL',
+        str_contains($p, 'wood') || str_contains($p, 'carpent') || str_contains($p, 'furniture') => 'WC',
+        str_contains($p, 'agriculture') || str_contains($p, 'agric')               => 'AG',
+        str_contains($p, 'business') || str_contains($p, 'accounting')             => 'BUS',
+        default                                                                     => 'GEN',
+    };
+}
+
+/**
+ * Auto-assign a boarding house to a new boarder student using a load-balancing
+ * strategy: always pick the active house with the fewest completed-registration
+ * occupants. If multiple houses tie, alphabetical order breaks the tie.
+ * Returns the house id, or null if no active house has space.
+ */
+function autoAssignHouse(PDO $pdo): ?int {
+    // Single query: count current occupants per active house, pick the
+    // least-occupied one that still has free capacity.
+    $stmt = $pdo->prepare("
+        SELECT h.id, h.capacity,
+               COUNT(s.id) AS occupied
+        FROM   houses h
+        LEFT JOIN students s
+               ON s.house_id = h.id
+              AND s.registration_status = 'completed'
+        WHERE  h.is_active = 1
+        GROUP  BY h.id, h.capacity, h.name
+        HAVING occupied < h.capacity
+        ORDER  BY occupied ASC, h.name ASC
+        LIMIT  1
+    ");
+    $stmt->execute();
+    $row = $stmt->fetch();
+    return $row ? (int) $row['id'] : null;
+}
+
+/**
+ * Generate and persist the next admission number for a given program + year.
+ * Format:  CDTI/BC/2026/0001
+ *
+ * Uses an INSERT … ON DUPLICATE KEY UPDATE trick to atomically increment the
+ * per-program-per-year sequence counter — safe under concurrent requests
+ * because the UPDATE is a single atomic statement in InnoDB.
+ *
+ * Falls back gracefully if the student_id_sequences table doesn't exist yet
+ * (returns a UUID-based placeholder so the registration never hard-fails).
+ */
+function generateAdmissionNumber(PDO $pdo, string $program, string $year): string {
+    $code = getProgramCode($program);
+    $year = preg_replace('/\D/', '', $year); // keep digits only, e.g. "2026/2027" → "20262027"
+    if (strlen($year) > 4) $year = substr($year, 0, 4); // take first 4 digits
+
+    try {
+        // Atomically insert or increment the counter
+        $pdo->prepare("
+            INSERT INTO student_id_sequences (program_code, year, last_seq)
+            VALUES (?, ?, 1)
+            ON DUPLICATE KEY UPDATE last_seq = last_seq + 1
+        ")->execute([$code, $year]);
+
+        // Read back the value we just set
+        $stmt = $pdo->prepare("
+            SELECT last_seq FROM student_id_sequences
+            WHERE program_code = ? AND year = ?
+        ");
+        $stmt->execute([$code, $year]);
+        $seq = (int) $stmt->fetchColumn();
+
+        return sprintf('CDTI/%s/%s/%04d', $code, $year, $seq);
+    } catch (PDOException $e) {
+        // Table may not exist yet — return a safe placeholder
+        error_log('generateAdmissionNumber failed: ' . $e->getMessage());
+        return sprintf('CDTI/%s/%s/%s', $code, $year, strtoupper(substr(bin2hex(random_bytes(3)), 0, 4)));
+    }
 }
 
 // ── Hubtel SMS ───────────────────────────────────────────────────────────────

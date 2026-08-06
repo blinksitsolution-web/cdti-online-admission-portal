@@ -3,48 +3,175 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>You're offline</title>
+<title>You're offline — CDTI Admission</title>
 <style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    margin: 0;
     min-height: 100vh;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
     background: #0f1e2d;
     color: #fff;
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-    padding: 2rem;
-    box-sizing: border-box;
+    padding: 2rem 1.25rem;
   }
   .card {
-    max-width: 420px;
+    max-width: 460px;
+    width: 100%;
     text-align: center;
   }
-  .icon { font-size: 3rem; margin-bottom: 1rem; }
-  h1 { font-size: 1.4rem; margin: 0 0 0.75rem; }
-  p { color: rgba(255,255,255,0.75); line-height: 1.5; margin: 0 0 0.5rem; }
+  .icon { font-size: 3.5rem; margin-bottom: 1.25rem; }
+  h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.6rem; color: #fff; }
+  .subtitle { color: rgba(255,255,255,0.65); line-height: 1.6; font-size: 0.92rem; margin-bottom: 1.5rem; }
+
+  .tip-list {
+    background: rgba(0,111,160,0.12);
+    border: 1px solid rgba(0,180,255,0.2);
+    border-radius: 12px;
+    padding: 1.1rem 1.25rem;
+    text-align: left;
+    margin-bottom: 1.5rem;
+  }
+  .tip-list h2 {
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #4dd8ff;
+    font-weight: 700;
+    margin-bottom: 0.75rem;
+  }
+  .tip-list li {
+    list-style: none;
+    display: flex;
+    align-items: flex-start;
+    gap: 0.6rem;
+    font-size: 0.88rem;
+    color: rgba(255,255,255,0.75);
+    line-height: 1.55;
+    margin-bottom: 0.65rem;
+  }
+  .tip-list li:last-child { margin-bottom: 0; }
+  .tip-list li .num {
+    background: rgba(0,180,255,0.2);
+    color: #4dd8ff;
+    border-radius: 50%;
+    width: 1.4rem;
+    height: 1.4rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 800;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .actions { display: flex; gap: 0.65rem; justify-content: center; flex-wrap: wrap; }
   button {
-    margin-top: 1.5rem;
     background: #006fa0;
     color: #fff;
     border: none;
-    border-radius: 8px;
+    border-radius: 9px;
     padding: 0.7rem 1.5rem;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
+    font-weight: 700;
     cursor: pointer;
+    transition: background 0.2s;
   }
   button:hover { background: #0086c3; }
+  button.sec {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.25);
+    color: rgba(255,255,255,0.65);
+  }
+  button.sec:hover { background: rgba(255,255,255,0.07); }
+
+  .saved-notice {
+    display: none;
+    margin-top: 1.25rem;
+    background: rgba(45,198,83,0.12);
+    border: 1px solid rgba(45,198,83,0.3);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    font-size: 0.85rem;
+    color: rgba(255,255,255,0.8);
+    line-height: 1.5;
+  }
+  .saved-notice strong { color: #2dc653; }
 </style>
 </head>
 <body>
   <div class="card">
-    <div class="icon" aria-hidden="true">&#128246;</div>
-    <h1>You need a connection for this page</h1>
-    <p>This page hasn't been opened on this device before, so it isn't available offline yet.</p>
-    <p>Signing in and completing payment always require an active connection — once you've opened your registration form at least once while online, you'll be able to keep filling it in offline.</p>
-    <button type="button" id="retryBtn">Try again</button>
+    <div class="icon" aria-hidden="true">📶</div>
+    <h1>No Internet Connection</h1>
+    <p class="subtitle">
+      Don't worry — your registration data is safe.<br>
+      Here's what you can do right now:
+    </p>
+
+    <div class="tip-list">
+      <h2>Your options</h2>
+      <ul>
+        <li>
+          <span class="num">1</span>
+          <span>If you already <strong style="color:#fff;">opened the registration form</strong> at least once while online, <strong style="color:#fff;">go back</strong> — the form works fully offline and auto-saves as you type.</span>
+        </li>
+        <li>
+          <span class="num">2</span>
+          <span>If you submitted while offline, your data is <strong style="color:#fff;">saved on this device</strong>. It will be sent to the server automatically the moment you reconnect — even briefly.</span>
+        </li>
+        <li>
+          <span class="num">3</span>
+          <span>To use the form without internet, you must <strong style="color:#fff;">log in once while online</strong> first. A short connection at a school Wi-Fi hotspot or mobile data burst is enough.</span>
+        </li>
+        <li>
+          <span class="num">4</span>
+          <span><strong style="color:#fff;">Signing in</strong> and <strong style="color:#fff;">payment</strong> always need an active connection — these cannot be done offline.</span>
+        </li>
+      </ul>
+    </div>
+
+    <div id="savedNotice" class="saved-notice">
+      ✅ <strong>You have a saved draft</strong> on this device.<br>
+      Your registration data is stored here and will be submitted automatically when you reconnect.
+    </div>
+
+    <div class="actions">
+      <button type="button" id="retryBtn">🔄 Try Again</button>
+      <button type="button" class="sec" onclick="history.back()">← Go Back</button>
+    </div>
   </div>
+
   <script src="/assets/js/offline-fallback.js"></script>
+  <script>
+    // Check if there's a saved draft in IndexedDB and show a reassuring notice
+    (function () {
+      if (!window.indexedDB) return;
+      var req = indexedDB.open('cdti_admission_offline', 1);
+      req.onsuccess = function () {
+        var db = req.result;
+        if (!db.objectStoreNames.contains('submission_queue') && !db.objectStoreNames.contains('drafts')) return;
+        try {
+          var tx = db.transaction('drafts', 'readonly');
+          var store = tx.objectStore('drafts');
+          var getAll = store.getAll();
+          getAll.onsuccess = function () {
+            var drafts = getAll.result || [];
+            var hasDraft = drafts.some(function (d) {
+              var data = d.formData || {};
+              return Object.keys(data).some(function (k) {
+                var v = data[k]; return v !== '' && v !== false && v != null;
+              });
+            });
+            if (hasDraft) {
+              document.getElementById('savedNotice').style.display = 'block';
+            }
+          };
+        } catch (e) {}
+      };
+    })();
+  </script>
 </body>
 </html>

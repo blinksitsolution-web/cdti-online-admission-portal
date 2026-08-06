@@ -126,7 +126,7 @@ $grd_phone    = $isPost ? sanitize($_POST['guardian_phone'] ?? '')       : ($par
 $grd_addr     = $isPost ? sanitize($_POST['guardian_address'] ?? '')     : ($parentInfo['guardian_address'] ?? '');
 $grd_rel      = $isPost ? sanitize($_POST['guardian_relationship'] ?? '') : ($parentInfo['guardian_relationship'] ?? '');
 $declaration  = $isPost ? (isset($_POST['declaration']) ? 1 : 0)         : 0;
-$houseId      = $isPost ? (int) ($_POST['house_id'] ?? 0)                : (int) ($student['house_id'] ?? 0);
+// house_id is now auto-assigned at save time — no longer captured from POST.
 // Baseline photo = whatever's already on file; the upload-processing block
 // inside the POST branch below overwrites this only on a successful upload.
 $photoPath    = $student['passport_photo_path'] ?? '';
@@ -158,15 +158,7 @@ if ($isPost) {
         }
         if (!$declaration) $errors[] = ['field' => 'declaration', 'step' => 5, 'msg' => 'You must accept the declaration to submit.'];
 
-        if ($isBoarder) {
-            if ($houseId < 1) {
-                $errors[] = ['field' => 'house_id', 'step' => 2, 'msg' => 'Please select a boarding house.'];
-            } elseif (!isHouseAvailableForStudent($pdo, $houseId, normalizeStudentGender($student['gender']), $sid)) {
-                $errors[] = ['field' => 'house_id', 'step' => 2, 'msg' => 'The selected house is no longer available. Please choose another house.'];
-            }
-        } else {
-            $houseId = 0;
-        }
+        // House assignment is fully automatic — no student input required.
 
         // Phone validation
         $isValidPhone = function(string $num): bool {
@@ -247,15 +239,35 @@ if ($isPost) {
         }
 
         if (empty($errors)) {
-            // Update student
+            // ── Auto house assignment (boarders only, balanced load) ───────
+            $assignedHouseId = null;
+            if ($isBoarder) {
+                $assignedHouseId = autoAssignHouse($pdo);
+                // If no house is available log it but don't block registration
+                if ($assignedHouseId === null) {
+                    logAction('system', $sid, 'house_assignment_skipped', 'No active house with space found at registration');
+                }
+            }
+
+            // ── Auto admission number ─────────────────────────────────────
+            $academicYear = $s['academic_year'] ?? date('Y');
+            // Extract only the first 4 digits (handles "2026/2027" format)
+            if (preg_match('/(\d{4})/', $academicYear, $ym)) {
+                $academicYear = $ym[1];
+            }
+            $admissionNumber = generateAdmissionNumber($pdo, $student['program'] ?? '', $academicYear);
+
+            // Update student record
             $pdo->prepare("UPDATE students SET
                 date_of_birth=?, religion=?, hometown=?, region=?, nationality=?,
                 prev_jhs_school=?, prev_jhs_index=?, enrolment_code=?, aggregate=?,
-                passport_photo_path=?, house_id=?, submission_uuid=?, registration_status='completed', registered_at=NOW()
+                passport_photo_path=?, house_id=?, admission_number=?,
+                submission_uuid=?, registration_status='completed', registered_at=NOW()
                 WHERE id=?
             ")->execute([$dob, $religion, $hometown, $region, $nationality,
                          $prev_jhs, $prev_idx, $enrol_code, $aggregate, $photoPath,
-                         $houseId > 0 ? $houseId : null, $clientUuid !== '' ? $clientUuid : null, $sid]);
+                         $assignedHouseId, $admissionNumber,
+                         $clientUuid !== '' ? $clientUuid : null, $sid]);
 
             // Parent info — delete old and re-insert
             $pdo->prepare("DELETE FROM parent_guardian_info WHERE student_id=?")->execute([$sid]);
@@ -313,7 +325,6 @@ if ($isPost) {
     }
 }
 
-$availableHouses = $isBoarder ? getAvailableHouses($pdo, normalizeStudentGender($student['gender']), $sid) : [];
 $ghanaRegions = [
     'Greater Accra','Ashanti','Western','Eastern','Central','Volta','Brong-Ahafo',
     'Northern','Upper East','Upper West','Western North','Ahafo','Bono East',
@@ -402,10 +413,34 @@ $ghanaRegions = [
         <?php foreach ($errors as $e): ?><div><i class="fa-solid fa-triangle-exclamation"></i> <?= htmlspecialchars($e['msg']) ?></div><?php endforeach; ?>
       </div>
 
+      <!-- PWA Install Banner — shown only when browser offers install prompt -->
+      <div id="installBanner" style="display:none;background:linear-gradient(135deg,rgba(0,111,160,0.2),rgba(0,60,90,0.35));border:1px solid rgba(0,180,255,0.35);border-radius:12px;padding:0.85rem 1rem;margin-bottom:1rem;">
+        <div style="display:flex;align-items:flex-start;gap:0.75rem;">
+          <span style="font-size:1.4rem;flex-shrink:0;">📲</span>
+          <div style="flex:1;">
+            <strong style="color:#ffffff;font-size:0.9rem;display:block;margin-bottom:0.2rem;">Install for Offline Use</strong>
+            <span id="installBannerText" style="color:rgba(255,255,255,0.7);font-size:0.8rem;line-height:1.5;display:block;">
+              Add this page to your home screen. You can fill in the form even without internet &mdash; it submits automatically once you&rsquo;re back online.
+            </span>
+            <div style="display:flex;gap:0.5rem;margin-top:0.6rem;flex-wrap:wrap;">
+              <button id="installBtn" type="button"
+                style="background:#006fa0;color:#fff;border:none;border-radius:7px;padding:0.4rem 1rem;font-size:0.82rem;font-weight:700;cursor:pointer;">
+                <i class="fa-solid fa-download"></i> Install App
+              </button>
+              <button id="installDismiss" type="button"
+                style="background:transparent;color:rgba(255,255,255,0.45);border:1px solid rgba(255,255,255,0.2);border-radius:7px;padding:0.4rem 0.75rem;font-size:0.78rem;cursor:pointer;">
+                Not now
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div id="queueBanner" class="queue-banner hidden" role="status" aria-live="polite">
         <i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>
         <span id="queueBannerText"></span>
       </div>
+
 
       <p id="draftStatus" role="status" aria-live="polite" style="text-align:right;font-size:0.75rem;color:var(--text-muted);margin:0 0 0.5rem;min-height:1.1em;"></p>
 
@@ -529,22 +564,16 @@ $ghanaRegions = [
           </div>
           <?php if ($isBoarder): ?>
           <div class="uk-margin">
-            <label class="uk-form-label">Boarding House * <small style="color:#4dd8ff;">(<?= htmlspecialchars($student['gender']) ?> houses only)</small></label>
-            <?php if (empty($availableHouses)): ?>
-            <div class="alert-error" style="margin-top:0.5rem;">
-              <i class="fa-solid fa-triangle-exclamation"></i>
-              No boarding houses are currently available for <?= htmlspecialchars($student['gender']) ?> students. Please contact the school helpline.
+            <div style="background:rgba(0,111,160,0.12);border:1px solid rgba(0,180,255,0.3);border-radius:10px;padding:0.85rem 1rem;display:flex;align-items:flex-start;gap:0.75rem;">
+              <i class="fa-solid fa-house-chimney" style="color:#4dd8ff;font-size:1.2rem;margin-top:2px;flex-shrink:0;"></i>
+              <div>
+                <strong style="color:#ffffff;font-size:0.9rem;display:block;margin-bottom:0.25rem;">Boarding House — Auto Assigned</strong>
+                <span style="color:rgba(255,255,255,0.65);font-size:0.82rem;line-height:1.5;">
+                  Your boarding house will be automatically assigned by the system when you complete registration.
+                  Houses are balanced so that each house has an equal number of students.
+                </span>
+              </div>
             </div>
-            <?php else: ?>
-            <select class="uk-input portal-select" name="house_id" id="house_id" required>
-              <option value="">Select your house</option>
-              <?php foreach ($availableHouses as $house): ?>
-              <option value="<?= (int) $house['id'] ?>" <?= $houseId === (int) $house['id'] ? 'selected' : '' ?>>
-                <?= htmlspecialchars($house['name']) ?> (<?= (int) $house['remaining'] ?> bed<?= $house['remaining'] === 1 ? '' : 's' ?> left)
-              </option>
-              <?php endforeach; ?>
-            </select>
-            <?php endif; ?>
           </div>
           <?php endif; ?>
           <div class="step-nav-btns">
@@ -624,7 +653,7 @@ $ghanaRegions = [
             <tr><td>Residency</td><td><?= htmlspecialchars($student['residency']) ?></td></tr>
             <tr><td>BECE Aggregate</td><td id="rv_aggregate">—</td></tr>
             <?php if ($isBoarder): ?>
-            <tr><td>Boarding House</td><td id="rv_house">—</td></tr>
+            <tr><td>Boarding House</td><td><em style="color:rgba(255,255,255,0.5);font-size:0.82rem;">Auto-assigned on submission</em></td></tr>
             <?php endif; ?>
             <tr><td>Date of Birth</td><td id="rv_dob">—</td></tr>
             <tr><td>Religion</td><td id="rv_religion">—</td></tr>
@@ -709,11 +738,8 @@ function validateStep(step) {
       Swal.fire({icon:'warning',title:'Required',text:'Please enter your BECE aggregate.',background:'#0f1e2d',color:'#fff'});
       return false;
     }
-    const houseEl = document.getElementById('house_id');
-    if (houseEl && !houseEl.value) {
-      Swal.fire({icon:'warning',title:'Required',text:'Please select a boarding house.',background:'#0f1e2d',color:'#fff'});
-      return false;
-    }
+    // No house selection needed — house is auto-assigned at save time.
+    return true;
   }
   if (step === 3) {
     // Validate any filled-in phone numbers
@@ -744,11 +770,7 @@ function populateReview() {
   const aggEl = document.getElementById('aggregate');
   const rvAgg = document.getElementById('rv_aggregate');
   if (aggEl && rvAgg) rvAgg.textContent = aggEl.value || '—';
-  const houseEl = document.getElementById('house_id');
-  const rvHouse = document.getElementById('rv_house');
-  if (houseEl && rvHouse) {
-    rvHouse.textContent = houseEl.options[houseEl.selectedIndex]?.text || '—';
-  }
+  // House is auto-assigned — nothing to populate for it in the review.
   const preview = document.getElementById('photoPreview');
   const rvPhoto = document.getElementById('reviewPhoto');
   if (preview && !preview.classList.contains('hidden')) {
@@ -891,6 +913,77 @@ if (firstErrorStep) {
   updateStepUI(1);
 }
 </script>
+<script nonce="<?= generateCspNonce() ?>">
+// ── PWA Install Banner ────────────────────────────────────────────────────────
+// Shows a prompt to add the registration form to the home screen.
+// For Android Chrome: intercepts the native beforeinstallprompt event.
+// For iOS Safari: shows manual instructions (iOS doesn't support the event).
+// Remembers dismissals for 14 days so we don't nag returning students.
+(function () {
+  var DISMISS_KEY = 'cdti_install_dismissed';
+  var DISMISS_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+  var banner    = document.getElementById('installBanner');
+  var installBtn = document.getElementById('installBtn');
+  var dismissBtn = document.getElementById('installDismiss');
+  var bannerText = document.getElementById('installBannerText');
+  if (!banner) return;
+
+  // Don't show if already installed (running as standalone PWA)
+  if (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) return;
+  if (window.navigator.standalone === true) return; // iOS PWA
+
+  // Don't show if recently dismissed
+  try {
+    var dismissed = localStorage.getItem(DISMISS_KEY);
+    if (dismissed && (Date.now() - parseInt(dismissed, 10)) < DISMISS_DURATION_MS) return;
+  } catch (e) {}
+
+  function showBanner() {
+    banner.style.display = 'block';
+  }
+
+  function hideBanner(remember) {
+    banner.style.display = 'none';
+    if (remember) {
+      try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch (e) {}
+    }
+  }
+
+  dismissBtn && dismissBtn.addEventListener('click', function () { hideBanner(true); });
+
+  // Android / Desktop Chrome — native install prompt
+  var deferredPrompt = null;
+  window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    showBanner();
+    installBtn && installBtn.addEventListener('click', function () {
+      hideBanner(false);
+      deferredPrompt.prompt();
+      deferredPrompt.userChoice.then(function (choice) {
+        if (choice.outcome === 'accepted') hideBanner(true);
+        deferredPrompt = null;
+      });
+    });
+  });
+
+  // Hide after successful install
+  window.addEventListener('appinstalled', function () { hideBanner(true); });
+
+  // iOS Safari — manual instructions (no beforeinstallprompt support)
+  var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) && !window.MSStream;
+  var isSafari = /safari/i.test(navigator.userAgent) && !/chrome|crios|fxios/i.test(navigator.userAgent);
+  if (isIOS && isSafari) {
+    if (bannerText) {
+      bannerText.innerHTML = 'Tap <strong style="color:#4dd8ff;">\u2191 Share</strong> then <strong style="color:#4dd8ff;">"Add to Home Screen"</strong>. This lets you fill the form offline &mdash; it will submit automatically once you\'re back online.';
+    }
+    if (installBtn) installBtn.style.display = 'none'; // No programmatic prompt on iOS
+    showBanner();
+  }
+})();
+</script>
 <script src="<?= asset('assets/js/register-offline.js') ?>"></script>
+
 </body>
 </html>
