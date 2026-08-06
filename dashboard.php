@@ -117,15 +117,32 @@ $deptLabel = $deptToolsLabels[$deptKey] ?? ['<i class="fa-solid fa-box-open"></i
       <?php endif; ?>
       <div class="student-details">
         <h3><?= htmlspecialchars($student['full_name']) ?></h3>
+        <?php if (!empty($student['admission_number'])): ?>
+        <div style="background:linear-gradient(135deg,rgba(0,111,160,0.3),rgba(0,180,255,0.2));border:1px solid rgba(0,180,255,0.5);border-radius:8px;padding:0.45rem 0.85rem;margin:0.4rem 0 0.65rem;display:inline-block;">
+          <span style="font-size:0.72rem;color:#4dd8ff;text-transform:uppercase;letter-spacing:1px;font-weight:700;display:block;">Admission Number</span>
+          <span style="font-size:1.1rem;font-weight:900;color:#ffffff;font-family:monospace;letter-spacing:1px;"><?= htmlspecialchars($student['admission_number']) ?></span>
+        </div>
+        <?php endif; ?>
         <p><i class="fa-solid fa-id-card"></i> Index: <strong style="color:#fff;"><?= htmlspecialchars($student['index_number']) ?></strong></p>
         <p><i class="fa-solid fa-graduation-cap"></i> Programme: <strong style="color:#fff;"><?= htmlspecialchars($student['program']) ?></strong></p>
         <p><i class="fa-solid fa-house-user"></i> Residency: <strong style="color:#fff;"><?= htmlspecialchars($student['residency']) ?></strong></p>
+        <?php
+        // Show assigned boarding house for boarders
+        if (isBoarderResidency($student['residency'] ?? '')) {
+            $houseStmt = $pdo->prepare("SELECT h.name FROM houses h INNER JOIN students s ON s.house_id=h.id WHERE s.id=?");
+            $houseStmt->execute([$sid]);
+            $hName = $houseStmt->fetchColumn();
+            if ($hName): ?>
+        <p><i class="fa-solid fa-house-chimney"></i> House: <strong style="color:#4dd8ff;"><?= htmlspecialchars($hName) ?></strong></p>
+        <?php   endif;
+        } ?>
         <p><i class="fa-solid fa-calendar-check"></i> Registered: <strong style="color:#2dc653;"><?= date('d M Y, H:i', strtotime($student['registered_at'] ?? 'now')) ?></strong></p>
         <?php if ($student['payment_status'] === 'paid'): ?>
         <div class="payment-badge"><i class="fa-solid fa-credit-card"></i> Fee Paid — Ref: <?= htmlspecialchars($student['payment_reference'] ?? '—') ?></div>
         <?php endif; ?>
       </div>
     </div>
+
 
     <!-- Documents -->
     <h4 style="color:#fff;font-weight:700;text-transform:uppercase;letter-spacing:1px;margin-bottom:1rem;">

@@ -43,20 +43,11 @@ $sigSrc         = !empty($s['principal_signature_path'])  ? fileToDataUri($s['pr
 $stampSrc       = !empty($s['school_stamp_path'])          ? fileToDataUri($s['school_stamp_path'])          : '';
 $letterheadSrc  = !empty($s['letterhead_header_path'])     ? fileToDataUri($s['letterhead_header_path'])     : '';
 
-// ── Sequential admission reference number (CDTI/ADM/<year>/0001) ──
-// Assigned once per student, first time their letter is generated, then
-// persisted so reprints always show the same reference.
-try {
-    $pdo->exec("ALTER TABLE students ADD COLUMN admission_ref_seq INT DEFAULT NULL");
-} catch (PDOException $e) {
-    if (strpos($e->getMessage(), 'Duplicate column name') === false) { throw $e; }
-}
-if (empty($student['admission_ref_seq'])) {
-    $nextSeq = (int) $pdo->query("SELECT COALESCE(MAX(admission_ref_seq), 0) + 1 FROM students")->fetchColumn();
-    $pdo->prepare("UPDATE students SET admission_ref_seq = ? WHERE id = ?")->execute([$nextSeq, $sid]);
-    $student['admission_ref_seq'] = $nextSeq;
-}
-$refNumber = 'CDTI/ADM/' . date('Y') . '/' . str_pad((string) $student['admission_ref_seq'], 4, '0', STR_PAD_LEFT);
+// ── Admission number (generated at registration) ──────────────────
+// Falls back to index number if migration hasn't been applied yet.
+$refNumber = !empty($student['admission_number'])
+    ? $student['admission_number']
+    : 'CDTI/ADM/' . date('Y') . '/' . str_pad((string)($student['id'] ?? '0'), 4, '0', STR_PAD_LEFT);
 ?>
 <!DOCTYPE html>
 <html lang="en">

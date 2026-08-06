@@ -196,6 +196,71 @@ $topbarTitle = '<i class="fa-solid fa-chart-simple"></i> Dashboard Overview';
         </div>
       </div>
 
+      <!-- ── Offline Kiosk Sync Card ─────────────────────────────────────── -->
+      <div class="admin-card" style="margin-top:1.25rem;border-top:3px solid #006fa0;" id="kioskSyncCard">
+        <div class="admin-card-header" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem;">
+          <h6 style="display:flex;align-items:center;gap:0.5rem;">
+            <i class="fa-solid fa-wifi-slash" style="color:#4dd8ff;"></i>
+            Offline Kiosk — Student Data Sync
+          </h6>
+          <a href="<?= BASE_URL ?>/offline-kiosk.html" target="_blank"
+            style="font-size:0.78rem;background:rgba(0,111,160,0.2);border:1px solid rgba(0,180,255,0.3);color:#4dd8ff;padding:0.3rem 0.8rem;border-radius:20px;text-decoration:none;white-space:nowrap;">
+            <i class="fa-solid fa-arrow-up-right-from-square"></i> Open Kiosk
+          </a>
+        </div>
+        <div class="admin-card-body" style="padding:1.25rem;">
+
+          <p style="color:var(--text-secondary);font-size:0.84rem;line-height:1.6;margin-bottom:1rem;">
+            Download all admitted student records to <strong style="color:var(--text-primary);">this browser</strong> so
+            students can register with <strong style="color:#4dd8ff;">no internet</strong> on this device.
+            Data syncs to the server automatically when connectivity returns.
+          </p>
+
+          <!-- Status indicator -->
+          <div id="kioskStatusBar" style="display:flex;align-items:flex-start;gap:0.75rem;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;padding:0.85rem 1rem;margin-bottom:1rem;">
+            <div id="kioskStatusDot" style="width:12px;height:12px;border-radius:50%;background:#555;flex-shrink:0;margin-top:3px;"></div>
+            <div style="flex:1;">
+              <div id="kioskStatusText" style="font-size:0.88rem;color:var(--text-primary);font-weight:600;">Checking…</div>
+              <div id="kioskStatusSub" style="font-size:0.78rem;color:var(--text-muted);margin-top:0.2rem;"></div>
+            </div>
+          </div>
+
+          <!-- Progress bar (hidden until sync starts) -->
+          <div id="kioskProgress" style="display:none;margin-bottom:1rem;">
+            <div style="display:flex;justify-content:space-between;font-size:0.78rem;color:var(--text-muted);margin-bottom:0.3rem;">
+              <span>Downloading student data…</span>
+              <span id="kioskProgressText">0%</span>
+            </div>
+            <div style="background:rgba(255,255,255,0.08);border-radius:4px;height:6px;overflow:hidden;">
+              <div id="kioskProgressFill" style="height:100%;background:linear-gradient(90deg,#006fa0,#4dd8ff);width:0%;transition:width 0.4s ease;"></div>
+            </div>
+          </div>
+
+          <!-- Warning: stale data -->
+          <div id="kioskStaleWarning" style="display:none;background:rgba(255,165,0,0.1);border:1px solid rgba(255,165,0,0.3);border-radius:8px;padding:0.65rem 0.85rem;margin-bottom:1rem;font-size:0.82rem;color:#ffaa40;">
+            <i class="fa-solid fa-triangle-exclamation"></i>
+            Kiosk data is more than 24 hours old. New students added since the last sync will not be available offline. Re-sync recommended.
+          </div>
+
+          <!-- Error display -->
+          <div id="kioskSyncError" style="display:none;background:rgba(220,60,60,0.1);border:1px solid rgba(220,60,60,0.3);border-radius:8px;padding:0.65rem 0.85rem;margin-bottom:1rem;font-size:0.82rem;color:#ff8080;"></div>
+
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;">
+            <button id="kioskSyncBtn" type="button"
+              style="background:#006fa0;color:#fff;border:none;border-radius:9px;padding:0.6rem 1.25rem;font-size:0.88rem;font-weight:700;cursor:pointer;display:flex;align-items:center;gap:0.5rem;transition:background 0.2s;">
+              <i class="fa-solid fa-cloud-arrow-down" id="kioskSyncIcon"></i>
+              <span id="kioskSyncLabel">Sync Now</span>
+            </button>
+            <a href="<?= BASE_URL ?>/offline-kiosk.html" target="_blank"
+              style="background:rgba(0,111,160,0.15);border:1px solid rgba(0,180,255,0.25);color:#4dd8ff;border-radius:9px;padding:0.6rem 1.25rem;font-size:0.88rem;font-weight:700;text-decoration:none;display:flex;align-items:center;gap:0.5rem;">
+              <i class="fa-solid fa-computer"></i> Open Registration Kiosk
+            </a>
+          </div>
+
+        </div>
+      </div>
+      <!-- / Offline Kiosk Sync Card -->
+
     </div>
   </main>
 </div>
@@ -313,5 +378,133 @@ const genderDeptChart = new Chart(genderCtx, {
   }
 });
 </script>
+
+<!-- Kiosk DB for offline sync card -->
+<script src="<?= asset('assets/js/kiosk-db.js') ?>"></script>
+<script nonce="<?= generateCspNonce() ?>">
+// ── Offline Kiosk Sync Card Logic ──────────────────────────────────────────
+(function () {
+  var STALE_MS   = 24 * 60 * 60 * 1000; // 24 hours
+  var syncBtn    = document.getElementById('kioskSyncBtn');
+  var syncLabel  = document.getElementById('kioskSyncLabel');
+  var syncIcon   = document.getElementById('kioskSyncIcon');
+  var statusText = document.getElementById('kioskStatusText');
+  var statusSub  = document.getElementById('kioskStatusSub');
+  var statusDot  = document.getElementById('kioskStatusDot');
+  var progressEl = document.getElementById('kioskProgress');
+  var progressFill = document.getElementById('kioskProgressFill');
+  var progressText = document.getElementById('kioskProgressText');
+  var staleWarn  = document.getElementById('kioskStaleWarning');
+  var errEl      = document.getElementById('kioskSyncError');
+
+  function setDot(color) { statusDot.style.background = color; }
+  function showErr(msg) { errEl.textContent = msg; errEl.style.display = 'block'; }
+  function hideErr() { errEl.style.display = 'none'; }
+
+  function setProgress(pct) {
+    progressFill.style.width = pct + '%';
+    progressText.textContent = pct + '%';
+  }
+
+  function fmtDate(ms) {
+    if (!ms) return 'never';
+    var d = new Date(ms);
+    return d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+
+  // Read current meta and update the card
+  function refreshStatus() {
+    KioskDB.getSyncMeta().then(function (meta) {
+      if (!meta || !meta.syncedAt) {
+        setDot('#ff6b6b');
+        statusText.textContent = 'Not synced — kiosk is not ready for offline use';
+        statusSub.textContent  = 'Click "Sync Now" to download student data to this browser.';
+        staleWarn.style.display = 'none';
+        return;
+      }
+      var age = Date.now() - meta.syncedAt;
+      var isStale = age > STALE_MS;
+      setDot(isStale ? '#ffaa40' : '#2dc653');
+      statusText.textContent = (meta.count || 0).toLocaleString() + ' students cached — kiosk ready';
+      statusSub.textContent  = 'Last sync: ' + fmtDate(meta.syncedAt);
+      staleWarn.style.display = isStale ? 'block' : 'none';
+    }).catch(function () {
+      setDot('#ff6b6b');
+      statusText.textContent = 'Could not read kiosk database';
+    });
+  }
+
+  // Do the actual sync
+  function doSync() {
+    hideErr();
+    syncBtn.disabled = true;
+    syncLabel.textContent = 'Syncing…';
+    syncIcon.className = 'fa-solid fa-spinner fa-spin';
+    progressEl.style.display = 'block';
+    setProgress(10);
+
+    // Use stored ETag for conditional GET
+    var headers = { 'Accept': 'application/json', 'Accept-Encoding': 'gzip' };
+    KioskDB.getSyncMeta().then(function (meta) {
+      if (meta && meta.etag) headers['If-None-Match'] = meta.etag;
+      return fetch('<?= BASE_URL ?>/admin/api/offline-export.php', {
+        credentials: 'same-origin',
+        headers: headers,
+      });
+    }).then(function (res) {
+      setProgress(50);
+      if (res.status === 304) {
+        // Data unchanged — just refresh timestamp
+        return KioskDB.getSyncMeta().then(function(m) {
+          return KioskDB.setSyncMeta(Object.assign({}, m, { syncedAt: Date.now() }));
+        }).then(function() {
+          setProgress(100);
+          return { noChange: true };
+        });
+      }
+      if (!res.ok) throw new Error('Server error ' + res.status);
+      var etag = res.headers.get('ETag') || '';
+      return res.json().then(function (data) {
+        setProgress(70);
+        return KioskDB.bulkStoreStudents(data.students).then(function (count) {
+          setProgress(90);
+          // Cache school settings for offline display
+          if (data.school) {
+            return KioskDB.setSchoolMeta(data.school).then(function() {
+              return KioskDB.setSyncMeta({ count: count, syncedAt: Date.now(), etag: etag });
+            }).then(function() { return { count: count }; });
+          }
+          return KioskDB.setSyncMeta({ count: count, syncedAt: Date.now(), etag: etag })
+            .then(function() { return { count: count }; });
+        });
+      });
+    }).then(function (result) {
+      setProgress(100);
+      setTimeout(function () {
+        progressEl.style.display = 'none';
+        setProgress(0);
+        syncBtn.disabled = false;
+        syncLabel.textContent = result && result.noChange ? 'Already up to date' : 'Sync Now';
+        syncIcon.className = 'fa-solid fa-cloud-arrow-down';
+        refreshStatus();
+      }, 800);
+    }).catch(function (err) {
+      progressEl.style.display = 'none';
+      setProgress(0);
+      syncBtn.disabled = false;
+      syncLabel.textContent = 'Sync Now';
+      syncIcon.className = 'fa-solid fa-cloud-arrow-down';
+      showErr('Sync failed: ' + (err.message || 'unknown error'));
+      refreshStatus();
+    });
+  }
+
+  if (syncBtn) syncBtn.addEventListener('click', doSync);
+  refreshStatus();
+
+  // Auto-refresh status every 60s (in case another tab synced)
+  setInterval(refreshStatus, 60000);
+})();
+
 </body>
 </html>

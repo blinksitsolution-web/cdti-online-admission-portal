@@ -12,8 +12,8 @@ if (isset($_GET['export']) && $_GET['export'] === 'csv') {
     header('Content-Type: text/csv');
     header('Content-Disposition: attachment; filename="students_' . date('Y-m-d') . '.csv"');
     $fp = fopen('php://output', 'w');
-    fputcsv($fp, ['Index Number','Full Name','Gender','Program','Residency','Aggregate','Payment','Status','Registered At']);
-    $rows = $pdo->query("SELECT index_number,full_name,gender,program,residency,aggregate,payment_status,registration_status,registered_at FROM students ORDER BY full_name")->fetchAll();
+    fputcsv($fp, ['Admission No.','Index Number','Full Name','Gender','Program','Residency','Aggregate','Payment','Status','Registered At']);
+    $rows = $pdo->query("SELECT admission_number,index_number,full_name,gender,program,residency,aggregate,payment_status,registration_status,registered_at FROM students ORDER BY full_name")->fetchAll();
     foreach ($rows as $row) fputcsv($fp, $row);
     fclose($fp); exit;
 }
@@ -136,6 +136,7 @@ $topbarTitle = '<i class="fa-solid fa-users"></i> Students & Placements';
                 <tr>
                   <th>#</th>
                   <th>Name</th>
+                  <th>Admission No.</th>
                   <th>Index No.</th>
                   <th>Gender</th>
                   <th>Programme</th>
@@ -152,6 +153,7 @@ $topbarTitle = '<i class="fa-solid fa-users"></i> Students & Placements';
                 <tr>
                   <td class="row-num"><?= $offset + $i + 1 ?></td>
                   <td><strong style="font-size:0.85rem;"><?= htmlspecialchars($st['full_name']) ?></strong></td>
+                  <td style="font-family:monospace;font-size:0.78rem;color:#4dd8ff;white-space:nowrap;"><?= htmlspecialchars($st['admission_number'] ?? '—') ?></td>
                   <td style="font-family:monospace;font-size:0.8rem;color:var(--text-secondary);"><?= htmlspecialchars($st['index_number']) ?></td>
                   <td style="font-size:0.82rem;"><?= htmlspecialchars($st['gender']) ?></td>
                   <td style="font-size:0.82rem;max-width:140px;word-wrap:break-word;"><?= htmlspecialchars($st['program']) ?></td>
@@ -177,7 +179,7 @@ $topbarTitle = '<i class="fa-solid fa-users"></i> Students & Placements';
                 </tr>
                 <?php endforeach; ?>
                 <?php if (empty($students)): ?>
-                <tr><td colspan="11" style="text-align:center;padding:3rem;color:var(--text-muted);">
+                <tr><td colspan="12" style="text-align:center;padding:3rem;color:var(--text-muted);">
                   No students found<?= ($search || $program || $residency || $status) ? ' matching your filters' : ' — import placement data first' ?>.
                 </td></tr>
                 <?php endif; ?>

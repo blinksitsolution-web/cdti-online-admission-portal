@@ -104,12 +104,7 @@
     }
 
     if (data.status === 'conflict') {
-      if (data.reason === 'house_unavailable') {
-        return OfflineDB.updateQueueItem(item.clientUuid, {
-          state: 'failed',
-          lastError: data.message || 'The selected house is no longer available.',
-        }).then(function (updated) { notify('house_unavailable', updated, data.message); });
-      }
+      // house_unavailable is no longer possible — houses are auto-assigned.
       if (data.reason === 'already_registered') {
         return archiveItem(item, 'already_registered');
       }

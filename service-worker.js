@@ -10,16 +10,20 @@
  */
 'use strict';
 
-var CACHE_VERSION = 'v2';
+var CACHE_VERSION = 'v4';
 var SHELL_CACHE = 'cdti-register-shell-' + CACHE_VERSION;
 var OFFLINE_FALLBACK_URL = '/assets/offline-fallback.html';
 
 var PRECACHE_URLS = [
   OFFLINE_FALLBACK_URL,
+  '/offline-kiosk.html',
   '/assets/js/offline-fallback.js',
   '/assets/css/main.css',
   '/assets/js/offline-db.js',
+  '/assets/js/sync-engine.js',
   '/assets/js/register-offline.js',
+  '/assets/js/kiosk-db.js',
+  '/assets/js/kiosk-app.js',
   '/assets/vendor/jquery/jquery-3.6.0.min.js',
   '/assets/vendor/bootstrap/css/bootstrap.min.css',
   '/assets/vendor/bootstrap/js/bootstrap.bundle.min.js',
@@ -89,7 +93,16 @@ function cacheFirstRevalidate(request) {
 // for this app's own logic (not the vendor libraries) — those get iterated
 // on, and a bug fix here needs to take effect on the very next online page
 // load rather than waiting on a service-worker update-and-reload cycle.
-var APP_JS_PATHS = ['/assets/js/offline-db.js', '/assets/js/register-offline.js', '/assets/js/sync-engine.js'];
+// App JS paths that get network-first treatment so bug fixes propagate on
+// the next online load without waiting for a SW update cycle. Includes all
+// kiosk files alongside the standard registration scripts.
+var APP_JS_PATHS = [
+  '/assets/js/offline-db.js',
+  '/assets/js/register-offline.js',
+  '/assets/js/sync-engine.js',
+  '/assets/js/kiosk-db.js',
+  '/assets/js/kiosk-app.js',
+];
 
 function networkFirstWithCacheFallback(request) {
   return caches.open(SHELL_CACHE).then(function (cache) {
@@ -120,7 +133,11 @@ self.addEventListener('fetch', function (event) {
     return;
   }
 
-  if (request.mode === 'navigate' || url.pathname.indexOf('/assets/') === 0) {
+  // Kiosk navigation (/offline-kiosk.html) is cache-first like the regular
+  // register shell — served from precache so it loads even with zero network.
+  if (request.mode === 'navigate' || url.pathname.indexOf('/assets/') === 0
+      || url.pathname === '/offline-kiosk.html') {
     event.respondWith(cacheFirstRevalidate(request));
+    return;
   }
 });

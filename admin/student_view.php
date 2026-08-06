@@ -20,8 +20,9 @@ if (!$student) redirect(BASE_URL . '/admin/students.php');
 $isBoarder = isBoarderResidency($student['residency'] ?? '');
 $houseOptions = [];
 if ($isBoarder) {
-    $houseStmt = $pdo->prepare("SELECT id, name, gender, capacity FROM houses WHERE gender = ? ORDER BY name");
-    $houseStmt->execute([normalizeStudentGender($student['gender'])]);
+    // All active houses available — no gender filter
+    $houseStmt = $pdo->prepare("SELECT id, name, gender, capacity FROM houses WHERE is_active = 1 ORDER BY name");
+    $houseStmt->execute();
     foreach ($houseStmt->fetchAll() as $house) {
         $house['occupied'] = getHouseOccupancy($pdo, (int) $house['id'], $id);
         $houseOptions[] = $house;
@@ -45,7 +46,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_student'])) {
             setFlash('admin_error', 'Please select a boarding house for boarder students.');
             redirect('/admin/student_view?id=' . $id);
         } elseif (!isHouseAvailableForStudent($pdo, $houseId, normalizeStudentGender($gender), $id)) {
-            setFlash('admin_error', 'The selected house is at capacity or does not match student gender.');
+            setFlash('admin_error', 'The selected house is at capacity.');
             redirect('/admin/student_view?id=' . $id);
         }
     }
@@ -184,6 +185,9 @@ $topbarTitle = '<i class="fa-solid fa-arrow-left"></i> <a href="' . BASE_URL . '
             <span class="badge-status badge-<?= $student['registration_status'] ?>"><?= str_replace('_',' ',$student['registration_status']) ?></span>
             <hr>
             <table style="width:100%;font-size:0.82rem;text-align:left;">
+              <?php if (!empty($student['admission_number'])): ?>
+              <tr><td style="color:#888;padding:0.2rem 0;">Admission No.</td><td><strong style="color:#4dd8ff;font-family:monospace;"><?= htmlspecialchars($student['admission_number']) ?></strong></td></tr>
+              <?php endif; ?>
               <tr><td style="color:#888;padding:0.2rem 0;">Program</td><td><strong><?= htmlspecialchars($student['program']) ?></strong></td></tr>
               <tr><td style="color:#888;">Residency</td><td><strong><?= htmlspecialchars($student['residency']) ?></strong></td></tr>
               <?php if ($isBoarder): ?>
